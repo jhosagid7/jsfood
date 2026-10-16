@@ -121,4 +121,38 @@ class PosDiscountAndCancellationTest extends TestCase
             'status' => 'pending',
         ]);
     }
+
+    public function test_cashier_can_checkout_and_reprint_ticket()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $order = Order::create([
+            'user_id' => $user->id,
+            'order_number' => 'ORD-PRINT1',
+            'service_type' => 'dine_in',
+            'status' => 'pending',
+            'subtotal_usd' => 20.00,
+            'total_usd' => 20.00,
+        ]);
+
+        $product = \App\Models\Product::first();
+        $order->items()->create([
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'unit_price_usd' => 20.00,
+            'subtotal_usd' => 20.00,
+        ]);
+
+        Livewire::test(CashierRegister::class, ['order_id' => $order->id])
+            ->call('selectOrder', $order->id)
+            ->set('amountReceived', 20.00)
+            ->call('processCheckout')
+            ->assertDispatched('notify')
+            ->call('reprintTicket')
+            ->assertDispatched('notify');
+
+        $this->assertEquals('paid', $order->fresh()->status);
+    }
 }
+

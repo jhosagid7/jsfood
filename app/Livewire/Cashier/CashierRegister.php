@@ -38,6 +38,9 @@ class CashierRegister extends Component
     public float $discountValue = 0.00;
     public string $discountReason = '';
 
+    // Historial para re-impresión
+    public ?int $lastPaidOrderId = null;
+
     public function mount()
     {
         $orderIdParam = request()->query('order_id');
@@ -349,14 +352,48 @@ class CashierRegister extends Component
         // 4. Imprimir Ticket Térmico de Caja (58/80mm) con Apertura de Gaveta
         $config = Configuration::first();
         $printerWidth = $config->printer_width ?? 80;
+        $printerName = $config->printer_name ?? 'POS-80';
         $escpos = TicketPrinterService::buildReceiptTicket($order, $printerWidth, true);
-        TicketPrinterService::sendToPrinter($escpos, $config->printer_name ?? 'POS-80');
+        $printed = TicketPrinterService::sendToPrinter($escpos, $printerName);
 
-        $this->dispatch('notify', message: "✅ Cobro procesado exitosamente. Ticket impreso.", type: 'success');
+        $this->lastPaidOrderId = $order->id;
+
+        if ($printed) {
+            $this->dispatch('notify', message: "✅ Cobro procesado exitosamente. Ticket impreso en {$printerName}.", type: 'success');
+        } else {
+            $this->dispatch('notify', message: "✅ Cobro procesado exitosamente, pero la impresora '{$printerName}' no respondió. Revisa la conexión de la impresora.", type: 'warning');
+        }
 
         // Resetear y seleccionar siguiente orden
-        $this->reset(['selectedOrderId', 'appliedPayments', 'paymentReference']);
+        $this->reset(['selectedOrderId', 'appliedPayments', 'paymentReference', 'discountValue']);
         $this->mount();
+    }
+
+    public function reprintTicket(?int $orderId = null)
+    {
+        $id = $orderId ?? $this->lastPaidOrderId;
+        if (!$id) {
+            $this->dispatch('notify', message: "No hay ticket reciente para re-imprimir", type: 'warning');
+            return;
+        }
+
+        $order = Order::with('items.product', 'diningTable', 'customer', 'payments')->find($id);
+        if (!$order) {
+            $this->dispatch('notify', message: "Orden no encontrada", type: 'error');
+            return;
+        }
+
+        $config = Configuration::first();
+        $printerWidth = $config->printer_width ?? 80;
+        $printerName = $config->printer_name ?? 'POS-80';
+        $escpos = TicketPrinterService::buildReceiptTicket($order, $printerWidth, false);
+        $printed = TicketPrinterService::sendToPrinter($escpos, $printerName);
+
+        if ($printed) {
+            $this->dispatch('notify', message: "Ticket #{$order->order_number} re-impreso exitosamente en {$printerName}", type: 'success');
+        } else {
+            $this->dispatch('notify', message: "Error al re-imprimir: la impresora '{$printerName}' no respondió", type: 'error');
+        }
     }
 
     public function render()

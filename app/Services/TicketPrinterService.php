@@ -265,6 +265,10 @@ class TicketPrinterService
         }
 
         $out .= self::separator($w, '=');
+        if ($order->discount_usd > 0) {
+            $out .= self::formatTwoColumns("SUBTOTAL:", "$" . number_format($order->subtotal_usd, 2), $w);
+            $out .= self::formatTwoColumns("DESCUENTO:", "-$" . number_format($order->discount_usd, 2), $w);
+        }
         $out .= self::BOLD_ON . self::DOUBLE_HEIGHT_ON;
         $out .= self::formatTwoColumns("TOTAL PAGADO:", "$" . number_format($order->total_usd, 2), $w);
         $out .= self::NORMAL_TEXT . self::BOLD_OFF;

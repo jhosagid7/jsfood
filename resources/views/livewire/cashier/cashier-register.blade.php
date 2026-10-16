@@ -4,16 +4,27 @@
         
         <!-- COLUMNA IZQUIERDA: Cuentas Pendientes por Cobrar (4 cols) -->
         <div class="lg:col-span-4 flex flex-col space-y-3">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md">
-                <h3 class="text-sm font-black text-white flex items-center justify-between">
-                    <span class="flex items-center space-x-2">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-md space-y-2">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-black text-white flex items-center space-x-2">
                         <span>🧾</span>
                         <span>Cuentas por Cobrar</span>
-                    </span>
+                    </h3>
                     <span class="bg-amber-500/20 text-amber-400 text-xs px-2 py-0.5 rounded-full font-bold">
                         {{ $pendingOrders->count() }} activas
                     </span>
-                </h3>
+                </div>
+                <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                    <span class="truncate flex items-center space-x-1" title="{{ $config->printer_name ?? 'POS-80' }}">
+                        <span>🖨️</span>
+                        <span>Caja: <strong class="text-slate-300 font-mono">{{ Str::limit($config->printer_name ?? 'POS-80', 20) }}</strong></span>
+                    </span>
+                    @if($lastPaidOrderId)
+                        <button type="button" wire:click="reprintTicket" class="text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer shrink-0 ml-1">
+                            Re-imprimir
+                        </button>
+                    @endif
+                </div>
             </div>
 
             <!-- Lista de Cuentas -->
@@ -320,10 +331,24 @@
 
                 </div>
             @else
-                <div class="p-16 text-center text-slate-500 bg-slate-900 rounded-2xl border border-slate-800">
-                    <span class="text-5xl block mb-3">👈</span>
-                    <p class="text-xl font-black text-slate-300">Selecciona una comanda</p>
-                    <p class="text-sm text-slate-500 mt-1">Elige una cuenta de la lista izquierda para proceder al cobro.</p>
+                <div class="p-12 text-center text-slate-500 bg-slate-900 rounded-2xl border border-slate-800 space-y-4">
+                    <span class="text-5xl block mb-2">👈</span>
+                    <h3 class="text-xl font-black text-slate-300">Selecciona una comanda</h3>
+                    <p class="text-sm text-slate-500">Elige una cuenta de la lista izquierda para proceder al cobro.</p>
+
+                    @if($lastPaidOrderId)
+                        <div class="mt-6 inline-block bg-slate-950/80 border border-emerald-500/40 rounded-2xl p-5 max-w-sm text-left shadow-xl">
+                            <div class="flex items-center space-x-2 text-emerald-400 font-bold text-sm mb-1">
+                                <span>✅</span>
+                                <span>Último cobro completado</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mb-3">Impresora destino: <span class="font-mono text-slate-200">{{ $config->printer_name ?? 'POS-80' }}</span></p>
+                            <button type="button" wire:click="reprintTicket" class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center space-x-2 cursor-pointer">
+                                <span>🖨️</span>
+                                <span>Re-imprimir Ticket de Pago</span>
+                            </button>
+                        </div>
+                    @endif
                 </div>
             @endif
         </div>

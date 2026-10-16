@@ -57,7 +57,8 @@ class PrinterSettings extends Component
             $p = $this->discoveredPrinters[$index];
             $name = $this->normalizePrinterName($p['unc'] ?? $p['name'] ?? '');
             $this->cashierPrinter = $name;
-            $this->dispatch('notify', message: "Impresora de caja asignada: {$name}", type: 'info');
+            Configuration::query()->update(['printer_name' => $name]);
+            $this->dispatch('notify', message: "Impresora de caja asignada y guardada: {$name}", type: 'success');
         }
     }
 
@@ -67,7 +68,8 @@ class PrinterSettings extends Component
             $p = $this->discoveredPrinters[$index];
             $name = $this->normalizePrinterName($p['unc'] ?? $p['name'] ?? '');
             $this->kitchenPrinter = $name;
-            $this->dispatch('notify', message: "Impresora de cocina asignada: {$name}", type: 'info');
+            Configuration::query()->update(['kitchen_printer_name' => $name]);
+            $this->dispatch('notify', message: "Impresora de cocina asignada y guardada: {$name}", type: 'success');
         }
     }
 
@@ -133,9 +135,14 @@ class PrinterSettings extends Component
 
         $success = TicketPrinterService::sendToPrinter($testData, $printerName);
         if ($success) {
-            $this->dispatch('notify', message: "Ticket de prueba enviado a {$printerName}", type: 'success');
+            if ($type === 'kitchen') {
+                Configuration::query()->update(['kitchen_printer_name' => $printerName, 'kitchen_printer_width' => $width]);
+            } else {
+                Configuration::query()->update(['printer_name' => $printerName, 'printer_width' => $width]);
+            }
+            $this->dispatch('notify', message: "Ticket impreso y configuración guardada en {$printerName}", type: 'success');
         } else {
-            $this->dispatch('notify', message: "Error al enviar prueba a {$printerName}", type: 'error');
+            $this->dispatch('notify', message: "Error al enviar prueba a {$printerName}. Verifica la conexión de red.", type: 'error');
         }
     }
 
