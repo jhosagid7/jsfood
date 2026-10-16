@@ -12,6 +12,27 @@ use Livewire\Attributes\Layout;
 class KitchenDisplay extends Component
 {
     public string $filter = 'active'; // 'active', 'in_kitchen', 'ready'
+    public array $knownOrderIds = [];
+
+    public function mount()
+    {
+        $this->knownOrderIds = Order::whereIn('status', ['pending', 'in_kitchen'])->pluck('id')->toArray();
+    }
+
+    public function checkNewOrders()
+    {
+        $currentActiveIds = Order::whereIn('status', ['pending', 'in_kitchen'])->pluck('id')->toArray();
+        $newIds = array_diff($currentActiveIds, $this->knownOrderIds);
+
+        if (!empty($newIds)) {
+            $this->dispatch('play-kitchen-chime');
+            $count = count($newIds);
+            $this->dispatch('notify', message: "🔔 ¡Nueva comanda recibida en cocina ({$count})!", type: 'warning');
+            $this->knownOrderIds = $currentActiveIds;
+        } else {
+            $this->knownOrderIds = $currentActiveIds;
+        }
+    }
 
     public function markAsPreparing(int $orderId)
     {
@@ -27,7 +48,8 @@ class KitchenDisplay extends Component
         $order = Order::with('diningTable')->find($orderId);
         if ($order) {
             $order->markReady();
-            $this->dispatch('notify', message: "¡Orden #{$order->order_number} lista para servir!", type: 'success');
+            $this->dispatch('play-waiter-chime');
+            $this->dispatch('notify', message: "¡Orden #{$order->order_number} lista para servir! Mesonero notificado.", type: 'success');
         }
     }
 

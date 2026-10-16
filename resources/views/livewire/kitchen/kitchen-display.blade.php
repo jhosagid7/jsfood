@@ -1,4 +1,4 @@
-<div class="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-3 sm:py-5" wire:poll.5s>
+<div class="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-3 sm:py-5" wire:poll.5s="checkNewOrders">
 
     <!-- Barra Superior de Control KDS -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 bg-slate-900 border border-slate-800 p-3 sm:p-4 rounded-2xl shadow-md">
@@ -13,8 +13,14 @@
             </div>
         </div>
 
-        <!-- Filtros de Estado -->
+        <!-- Filtros de Estado & Probar Sonido -->
         <div class="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0">
+            <button type="button" onclick="if(window.JSFoodAudio) window.JSFoodAudio.playKitchenChime()"
+                title="Probar timbre de cocina"
+                class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-amber-500/20 text-amber-400 border border-slate-700 text-xs font-bold transition-all flex items-center space-x-1">
+                <span>🔊</span>
+                <span class="hidden md:inline">Probar Timbre</span>
+            </button>
             <button wire:click="$set('filter', 'active')"
                 class="px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm {{ $filter === 'active' ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
                 🔥 Todas las Activas

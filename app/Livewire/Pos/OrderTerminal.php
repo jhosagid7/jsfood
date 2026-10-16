@@ -27,6 +27,11 @@ class OrderTerminal extends Component
     public ?int $editingItemId = null;
     public string $itemNoteText = '';
 
+    // Descuento
+    public bool $showDiscountModal = false;
+    public string $discountType = 'percent'; // 'percent' o 'fixed'
+    public float $discountValue = 0.00;
+
     public function mount($tableId = null)
     {
         $this->tableId = $tableId ? (int) $tableId : null;
@@ -55,14 +60,8 @@ class OrderTerminal extends Component
                 }
             }
         } else {
-            // Orden rápida de mostrador / para llevar
-            $waiter = $this->resolveWaiter();
-            $newOrder = Order::create([
-                'user_id' => $waiter->id,
-                'account_label' => 'Para Llevar / Mostrador',
-                'service_type' => 'takeout',
-            ]);
-            $this->orderId = $newOrder->id;
+            // No crear orden vacía automáticamente en mount para no ensuciar la base de datos
+            $this->orderId = null;
         }
 
         // Seleccionar la primera categoría por defecto
@@ -79,7 +78,22 @@ class OrderTerminal extends Component
 
     public function addProduct(int $productId)
     {
-        if (!$this->orderId) return;
+        // Si no hay orden abierta todavía (ej: pedido rápido para llevar), crearla al agregar el primer producto
+        if (!$this->orderId) {
+            $waiter = $this->resolveWaiter();
+            $newOrder = Order::create([
+                'table_id' => $this->tableId,
+                'area_id' => $this->tableId ? Table::find($this->tableId)?->area_id : null,
+                'user_id' => $waiter->id,
+                'account_label' => $this->tableId ? 'Cuenta Principal' : 'Para Llevar / Mostrador',
+                'service_type' => $this->tableId ? 'dine_in' : 'takeout',
+                'status' => 'pending',
+            ]);
+            $this->orderId = $newOrder->id;
+            if ($this->tableId) {
+                Table::find($this->tableId)?->syncStatus();
+            }
+        }
 
         $order = Order::find($this->orderId);
         $product = Product::find($productId);
@@ -197,6 +211,95 @@ class OrderTerminal extends Component
         }
 
         $this->dispatch('notify', message: "Pre-cuenta impresa exitosamente 🧾", type: 'success');
+    }
+
+    public function openDiscountModal()
+    {
+        if (!$this->orderId) return;
+        $order = Order::find($this->orderId);
+        if (!$order) return;
+        $this->discountValue = (float) $order->discount_usd;
+        $this->discountType = 'fixed';
+        $this->showDiscountModal = true;
+    }
+
+    public function applyPresetDiscount(float $percent)
+    {
+        if (!$this->orderId) return;
+        $order = Order::find($this->orderId);
+        if (!$order) return;
+
+        $discountUsd = round(($order->subtotal_usd * $percent) / 100, 2);
+        $order->applyDiscount($discountUsd);
+        $this->discountValue = $discountUsd;
+        $this->discountType = 'percent';
+        $this->showDiscountModal = false;
+        $this->dispatch('notify', message: "Descuento del {$percent}% aplicado (-$" . number_format($discountUsd, 2) . ")", type: 'success');
+    }
+
+    public function saveDiscount()
+    {
+        if (!$this->orderId) return;
+        $order = Order::find($this->orderId);
+        if (!$order) return;
+
+        if ($this->discountType === 'percent') {
+            $discountUsd = round(($order->subtotal_usd * (float) $this->discountValue) / 100, 2);
+        } else {
+            $discountUsd = round((float) $this->discountValue, 2);
+        }
+
+        if ($discountUsd < 0) {
+            $this->dispatch('notify', message: "El descuento no puede ser negativo", type: 'warning');
+            return;
+        }
+
+        if ($discountUsd > $order->subtotal_usd) {
+            $this->dispatch('notify', message: "El descuento no puede superar el subtotal", type: 'warning');
+            return;
+        }
+
+        $order->applyDiscount($discountUsd);
+        $this->showDiscountModal = false;
+        $this->dispatch('notify', message: "Descuento de $" . number_format($discountUsd, 2) . " aplicado", type: 'success');
+    }
+
+    public function removeDiscount()
+    {
+        if (!$this->orderId) return;
+        $order = Order::find($this->orderId);
+        if (!$order) return;
+
+        $order->applyDiscount(0.00);
+        $this->discountValue = 0.00;
+        $this->showDiscountModal = false;
+        $this->dispatch('notify', message: "Descuento removido", type: 'info');
+    }
+
+    public function cancelOrder()
+    {
+        if (!$this->orderId) {
+            return redirect()->to('/tables');
+        }
+
+        $order = Order::find($this->orderId);
+        if (!$order) {
+            return redirect()->to('/tables');
+        }
+
+        if ($order->payments()->exists()) {
+            $this->dispatch('notify', message: "No se puede cancelar una orden con pagos registrados", type: 'error');
+            return;
+        }
+
+        if ($order->deleteIfEmpty()) {
+            $this->dispatch('notify', message: "Orden vacía descartada", type: 'info');
+        } else {
+            $order->cancel("Cancelada desde Terminal de Pedidos");
+            $this->dispatch('notify', message: "Orden #{$order->order_number} cancelada exitosamente", type: 'success');
+        }
+
+        return redirect()->to('/tables');
     }
 
     protected function resolveWaiter(): \App\Models\User

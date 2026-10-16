@@ -1,20 +1,28 @@
-<div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6" wire:poll.10s>
+<div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6" wire:poll.5s="checkReadyOrders">
 
-    <!-- Barra Superior: Filtro por Áreas y Leyenda de Estados -->
+    <!-- Barra Superior: Filtro Principal (Mesas vs Para Llevar) y Leyenda de Estados -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         
-        <!-- Pestañas de Áreas -->
+        <!-- Pestañas Principales -->
         <div class="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            <button wire:click="selectArea(null)" 
-                class="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all shadow-sm {{ is_null($selectedAreaId) ? 'bg-amber-500 text-slate-950 shadow-amber-500/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
-                🏢 Todas las Zonas
+            <button wire:click="$set('viewTab', 'tables')" 
+                class="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all shadow-sm {{ $viewTab === 'tables' ? 'bg-amber-500 text-slate-950 shadow-amber-500/20 font-black' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
+                🍽️ Mesas & Salones
             </button>
-            @foreach($areas as $area)
-                <button wire:click="selectArea({{ $area->id }})" 
-                    class="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all shadow-sm {{ $selectedAreaId === $area->id ? 'bg-amber-500 text-slate-950 shadow-amber-500/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
-                    {{ $area->name }}
-                </button>
-            @endforeach
+            <button wire:click="$set('viewTab', 'takeout')" 
+                class="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all shadow-sm flex items-center space-x-2 {{ $viewTab === 'takeout' ? 'bg-amber-500 text-slate-950 shadow-amber-500/20 font-black' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
+                <span>🛍️ Para Llevar / Mostrador</span>
+                @if($takeoutOrders->count() > 0)
+                    <span class="px-2 py-0.5 rounded-full text-xs font-black {{ $viewTab === 'takeout' ? 'bg-slate-950 text-amber-400' : 'bg-amber-500 text-slate-950' }}">
+                        {{ $takeoutOrders->count() }}
+                    </span>
+                @endif
+            </button>
+            <button wire:click="$set('showTakeoutModal', true)"
+                class="px-3.5 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-md shadow-emerald-600/20 transition-all flex items-center space-x-1">
+                <span>➕</span>
+                <span>Nuevo Para Llevar</span>
+            </button>
         </div>
 
         <!-- Leyenda de Estados -->
@@ -26,6 +34,110 @@
             <span class="flex items-center space-x-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span class="text-slate-300">Pre-cuenta</span></span>
         </div>
     </div>
+
+    @if($viewTab === 'takeout')
+        <!-- VISTA DE PEDIDOS PARA LLEVAR / MOSTRADOR -->
+        <div class="space-y-4">
+            <div class="flex items-center justify-between bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                <div>
+                    <h3 class="text-lg font-black text-white flex items-center space-x-2">
+                        <span>🛍️</span>
+                        <span>Pedidos Para Llevar y Delivery Activos</span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Gestiona las órdenes directas, retiros en mostrador y despachos.</p>
+                </div>
+                <button wire:click="$set('showTakeoutModal', true)"
+                    class="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center space-x-2 shadow-lg shadow-amber-500/20">
+                    <span>➕ Crear Pedido Para Llevar</span>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                @forelse($takeoutOrders as $to)
+                    @php
+                        $badge = match($to->status) {
+                            'pending' => ['bg' => 'bg-amber-500/20 border-amber-500/40 text-amber-400', 'label' => 'Pendiente'],
+                            'in_kitchen' => ['bg' => 'bg-orange-500/20 border-orange-500/40 text-orange-400 animate-pulse', 'label' => 'En Cocina 🍳'],
+                            'ready' => ['bg' => 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400 animate-bounce', 'label' => '¡Listo! 🔔'],
+                            'served' => ['bg' => 'bg-blue-500/20 border-blue-500/40 text-blue-400', 'label' => 'Por Cobrar'],
+                            'bill_requested' => ['bg' => 'bg-red-500/20 border-red-500/40 text-red-400', 'label' => 'Cuenta 🧾'],
+                            default => ['bg' => 'bg-slate-800 border-slate-700 text-slate-400', 'label' => $to->status],
+                        };
+                    @endphp
+                    <div wire:key="takeout-card-{{ $to->id }}"
+                        class="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 shadow-xl flex flex-col justify-between space-y-3">
+                        
+                        <div>
+                            <div class="flex items-start justify-between">
+                                <div>
+                                    <h4 class="text-base font-black text-white leading-tight">
+                                        {{ $to->account_label }}
+                                    </h4>
+                                    <span class="text-xs text-slate-400 font-mono">#{{ $to->order_number }}</span>
+                                </div>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black border {{ $badge['bg'] }}">
+                                    {{ $badge['label'] }}
+                                </span>
+                            </div>
+
+                            <div class="mt-2 text-xs text-slate-300">
+                                <span>Cliente: <strong class="text-white">{{ $to->customer->name ?? 'Consumidor Final' }}</strong></span>
+                                <div class="text-[11px] text-slate-400 mt-1 font-mono">
+                                    {{ $to->items->count() }} platos / ítems
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="pt-2 border-t border-slate-800 flex items-center justify-between mb-3">
+                                <span class="text-xs text-slate-400 font-medium">Total:</span>
+                                <span class="text-lg font-black text-amber-400">
+                                    ${{ number_format($to->total_usd, 2) }}
+                                </span>
+                            </div>
+
+                            <div class="grid grid-cols-3 gap-1.5">
+                                <a href="{{ url('/pos/order?order_id=' . $to->id) }}"
+                                    class="py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-center text-xs font-bold transition-all">
+                                    📝 Comanda
+                                </a>
+                                <a href="{{ url('/cashier?order_id=' . $to->id) }}"
+                                    class="py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-center text-xs font-black transition-all shadow-sm">
+                                    💳 Cobrar
+                                </a>
+                                <button wire:click="cancelOrder({{ $to->id }})"
+                                    wire:confirm="¿Estás seguro de cancelar o descartar este pedido para llevar?"
+                                    class="py-2 bg-slate-950 hover:bg-red-950/60 border border-slate-800 hover:border-red-800 text-red-400 rounded-xl text-center text-xs font-bold transition-all" title="Cancelar Orden">
+                                    🗑️ Borrar
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                @empty
+                    <div class="col-span-full py-16 text-center text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800">
+                        <span class="text-4xl block mb-2">🛍️</span>
+                        <p class="font-bold text-white text-base">No hay pedidos para llevar activos</p>
+                        <p class="text-xs text-slate-400 mt-1">Haz clic en "+ Crear Pedido Para Llevar" para abrir una nueva orden de mostrador.</p>
+                    </div>
+                @endforelse
+            </div>
+        </div>
+    @else
+        <!-- VISTA DE ZONAS Y MESAS -->
+        <!-- Filtro por Áreas -->
+        <div class="flex items-center space-x-2 overflow-x-auto pb-3 mb-4 scrollbar-none">
+            <button wire:click="selectArea(null)" 
+                class="px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm {{ is_null($selectedAreaId) ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
+                🏢 Todas las Zonas
+            </button>
+            @foreach($areas as $area)
+                <button wire:click="selectArea({{ $area->id }})" 
+                    class="px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-sm {{ $selectedAreaId === $area->id ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
+                    {{ $area->name }}
+                </button>
+            @endforeach
+        </div>
 
     <!-- Cuadrícula de Mesas (Touch-Friendly Responsive Grid) -->
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
@@ -103,6 +215,7 @@
             </div>
         @endforelse
     </div>
+    @endif
 
     <!-- MODAL 1: Detalle de Cuentas Activas de la Mesa (Split Bill Hub) -->
     @if($showTableModal && $selectedTable)
@@ -161,6 +274,11 @@
                                     <span>💳</span>
                                     <span>Cobrar</span>
                                 </a>
+                                <button wire:click="cancelOrder({{ $order->id }})"
+                                    wire:confirm="¿Estás seguro de cancelar o descartar esta cuenta?"
+                                    class="p-2 bg-slate-950 hover:bg-red-950 border border-slate-800 hover:border-red-800 text-red-400 rounded-xl text-xs font-bold transition-colors" title="Cancelar Cuenta">
+                                    <span>🗑️</span>
+                                </button>
                             </div>
                         </div>
                     @empty
@@ -218,6 +336,58 @@
                         <button type="submit"
                             class="w-1/2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20">
                             Iniciar Comanda 🚀
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+
+    <!-- MODAL 3: Apertura de Pedido Para Llevar / Mostrador -->
+    @if($showTakeoutModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+            <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl">
+                
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-2xl">🛍️</span>
+                        <div>
+                            <h3 class="text-lg font-black text-white">Nuevo Pedido Para Llevar</h3>
+                            <span class="text-xs text-slate-400">Orden de mostrador / retiro directo</span>
+                        </div>
+                    </div>
+                    <button wire:click="$set('showTakeoutModal', false)" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+                        ✕
+                    </button>
+                </div>
+
+                <form wire:submit.prevent="createTakeoutOrder" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Nombre / Identificador del Pedido:</label>
+                        <input type="text" wire:model="takeoutLabel" placeholder="Ej: Para Llevar - Juan Pérez, Teléfono 0414..."
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                        <span class="text-[11px] text-slate-500">Puedes escribir el nombre del cliente o dejar en blanco para autonumerar.</span>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Cliente Registrado (Opcional):</label>
+                        <select wire:model="takeoutCustomerId"
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                            <option value="">Consumidor General / Ocasional</option>
+                            @foreach($customers as $c)
+                                <option value="{{ $c->id }}">{{ $c->name }} ({{ $c->identification ?? 'S/R' }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="pt-2 flex items-center space-x-2">
+                        <button type="button" wire:click="$set('showTakeoutModal', false)"
+                            class="w-1/2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs">
+                            Cancelar
+                        </button>
+                        <button type="submit"
+                            class="w-1/2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-xs shadow-lg shadow-emerald-600/20">
+                            Crear Comanda 🛍️
                         </button>
                     </div>
                 </form>

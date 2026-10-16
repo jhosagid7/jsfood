@@ -198,10 +198,32 @@
                 </div>
 
                 <!-- Resumen de Totales y Botones de Acción -->
-                <div class="pt-3 border-t border-slate-800 space-y-3">
+                <div class="pt-3 border-t border-slate-800 space-y-2.5">
                     <div class="flex items-center justify-between text-sm">
                         <span class="text-slate-400 font-semibold">Subtotal:</span>
                         <span class="text-white font-bold">${{ number_format($currentOrder->subtotal_usd ?? 0, 2) }}</span>
+                    </div>
+
+                    <!-- Fila de Descuento -->
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="flex items-center space-x-1">
+                            <span class="text-slate-400 font-semibold">Descuento:</span>
+                            @if(($currentOrder->discount_usd ?? 0) > 0)
+                                <button wire:click="removeDiscount" class="text-red-400 hover:text-red-300 text-xs font-bold" title="Remover descuento">✕</button>
+                            @endif
+                        </div>
+                        <div>
+                            @if(($currentOrder->discount_usd ?? 0) > 0)
+                                <button wire:click="openDiscountModal" class="text-emerald-400 font-bold hover:underline">
+                                    -${{ number_format($currentOrder->discount_usd, 2) }}
+                                </button>
+                            @else
+                                <button wire:click="openDiscountModal" class="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center space-x-1">
+                                    <span>🏷️</span>
+                                    <span>+ Descuento</span>
+                                </button>
+                            @endif
+                        </div>
                     </div>
 
                     <div class="flex items-center justify-between text-lg font-black border-t border-slate-800 pt-2">
@@ -233,6 +255,14 @@
                                 <span>Cobrar</span>
                             </a>
                         </div>
+
+                        <!-- 4. Cancelar / Descartar Orden -->
+                        <button wire:click="cancelOrder"
+                            wire:confirm="¿Estás seguro de cancelar o descartar esta orden? Esta acción no se puede deshacer."
+                            class="w-full py-2 px-3 rounded-xl bg-slate-950 hover:bg-red-950/60 border border-slate-800 hover:border-red-800 text-slate-400 hover:text-red-300 font-bold text-xs flex items-center justify-center space-x-1.5 transition-all">
+                            <span>🗑️</span>
+                            <span>Cancelar / Descartar Orden</span>
+                        </button>
                     </div>
                 </div>
 
@@ -261,6 +291,82 @@
                         Guardar Nota
                     </button>
                 </div>
+            </div>
+        </div>
+    @endif
+
+    <!-- MODAL DE DESCUENTO EN COMANDA -->
+    @if($showDiscountModal && $currentOrder)
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+            <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-2xl">🏷️</span>
+                        <div>
+                            <h3 class="text-lg font-black text-white">Aplicar Descuento a la Comanda</h3>
+                            <span class="text-xs text-slate-400">Subtotal: ${{ number_format($currentOrder->subtotal_usd, 2) }}</span>
+                        </div>
+                    </div>
+                    <button wire:click="$set('showDiscountModal', false)" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+                        ✕
+                    </button>
+                </div>
+
+                <!-- Botones de Descuento Rápido en Porcentaje -->
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-slate-300 uppercase mb-2">Descuentos Rápidos (%):</label>
+                    <div class="grid grid-cols-5 gap-2">
+                        <button type="button" wire:click="applyPresetDiscount(5)" class="py-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-xs font-black text-slate-300 transition-all border border-slate-700">5%</button>
+                        <button type="button" wire:click="applyPresetDiscount(10)" class="py-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-xs font-black text-slate-300 transition-all border border-slate-700">10%</button>
+                        <button type="button" wire:click="applyPresetDiscount(15)" class="py-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-xs font-black text-slate-300 transition-all border border-slate-700">15%</button>
+                        <button type="button" wire:click="applyPresetDiscount(20)" class="py-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-xs font-black text-slate-300 transition-all border border-slate-700">20%</button>
+                        <button type="button" wire:click="applyPresetDiscount(50)" class="py-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-xs font-black text-slate-300 transition-all border border-slate-700">50%</button>
+                    </div>
+                </div>
+
+                <!-- Tipo de Descuento Personalizado -->
+                <form wire:submit.prevent="saveDiscount" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                        <button type="button" wire:click="$set('discountType', 'percent')"
+                            class="py-2 rounded-lg text-xs font-bold transition-all {{ $discountType === 'percent' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white' }}">
+                            Porcentaje (%)
+                        </button>
+                        <button type="button" wire:click="$set('discountType', 'fixed')"
+                            class="py-2 rounded-lg text-xs font-bold transition-all {{ $discountType === 'fixed' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white' }}">
+                            Monto Fijo ($ USD)
+                        </button>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 uppercase mb-1">
+                            {{ $discountType === 'percent' ? 'Porcentaje de Descuento (%):' : 'Monto de Descuento ($ USD):' }}
+                        </label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-2.5 text-slate-400 font-bold">
+                                {{ $discountType === 'percent' ? '%' : '$' }}
+                            </span>
+                            <input type="number" step="0.01" min="0" wire:model="discountValue"
+                                class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono">
+                        </div>
+                    </div>
+
+                    <div class="pt-2 flex items-center space-x-2">
+                        @if(($currentOrder->discount_usd ?? 0) > 0)
+                            <button type="button" wire:click="removeDiscount"
+                                class="w-1/3 py-2.5 rounded-xl bg-red-950/60 hover:bg-red-900 border border-red-800/80 text-red-300 font-bold text-xs">
+                                Quitar
+                            </button>
+                        @endif
+                        <button type="button" wire:click="$set('showDiscountModal', false)"
+                            class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs">
+                            Cerrar
+                        </button>
+                        <button type="submit"
+                            class="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20">
+                            Aplicar Descuento
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     @endif

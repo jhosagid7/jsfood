@@ -88,6 +88,26 @@
                         </div>
                     </div>
 
+                    <!-- Botón de Audio y Alertas Sonoras -->
+                    <button type="button" 
+                        x-data="{ 
+                            enabled: true,
+                            toggle() {
+                                this.enabled = !this.enabled;
+                                if (window.JSFoodAudio) {
+                                    window.JSFoodAudio.enabled = this.enabled;
+                                    if (this.enabled) window.JSFoodAudio.playWaiterChime();
+                                }
+                            }
+                        }"
+                        @click="toggle()"
+                        :title="enabled ? 'Sonido de alertas activado (clic para silenciar)' : 'Sonido silenciado (clic para activar)'"
+                        class="p-2 rounded-xl border transition-all text-xs flex items-center space-x-1.5"
+                        :class="enabled ? 'bg-amber-500/15 border-amber-500/40 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-500'">
+                        <span x-text="enabled ? '🔔' : '🔕'"></span>
+                        <span class="hidden xl:inline text-[11px] font-bold" x-text="enabled ? 'Sonido ON' : 'Sonido OFF'"></span>
+                    </button>
+
                     <form method="POST" action="{{ route('logout') }}" class="inline">
                         @csrf
                         <button type="submit" title="Cerrar sesión / Cambiar usuario" class="p-2 rounded-xl bg-slate-800/80 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700/60 transition-colors flex items-center justify-center">
@@ -162,6 +182,74 @@
             </div>
         </template>
     </div>
+
+    <!-- Motor de Audio Sintetizado Web Audio API (Offline & Confiable) -->
+    <script>
+        window.JSFoodAudio = {
+            ctx: null,
+            enabled: true,
+            init() {
+                if (!this.ctx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContextClass) {
+                        this.ctx = new AudioContextClass();
+                    }
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            },
+            playKitchenChime() {
+                this.init();
+                if (!this.ctx || !this.enabled) return;
+                const now = this.ctx.currentTime;
+                // Doble campana brillante para cocina (880Hz y 1320Hz)
+                [ { freq: 880, start: 0, dur: 0.3 }, { freq: 1320, start: 0.14, dur: 0.55 } ].forEach(tone => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(tone.freq, now + tone.start);
+                    gain.gain.setValueAtTime(0.4, now + tone.start);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + tone.start);
+                    osc.stop(now + tone.start + tone.dur);
+                });
+            },
+            playWaiterChime() {
+                this.init();
+                if (!this.ctx || !this.enabled) return;
+                const now = this.ctx.currentTime;
+                // Timbre de servicio para mesonero (3 tonos armoniosos: 587Hz -> 880Hz -> 1174Hz)
+                [ { freq: 587.33, start: 0, dur: 0.25 }, { freq: 880, start: 0.12, dur: 0.28 }, { freq: 1174.66, start: 0.26, dur: 0.6 } ].forEach(tone => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(tone.freq, now + tone.start);
+                    gain.gain.setValueAtTime(0.45, now + tone.start);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + tone.start);
+                    osc.stop(now + tone.start + tone.dur);
+                });
+            }
+        };
+
+        window.addEventListener('play-kitchen-chime', () => {
+            window.JSFoodAudio.playKitchenChime();
+        });
+
+        window.addEventListener('play-waiter-chime', () => {
+            window.JSFoodAudio.playWaiterChime();
+        });
+
+        // Desbloquear audio con el primer toque o clic del usuario
+        document.addEventListener('click', () => {
+            if (window.JSFoodAudio) window.JSFoodAudio.init();
+        }, { once: true });
+    </script>
 
     @livewireScripts
 </body>

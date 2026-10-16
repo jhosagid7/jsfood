@@ -88,28 +88,36 @@
                 <span>Impresoras Detectadas en Windows y Red Local</span>
             </h3>
 
-            <button wire:click="scanPrinters"
-                class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center space-x-1">
-                <span>🔄</span>
-                <span>Escanear Red</span>
+            <button wire:click="scanPrinters" wire:loading.attr="disabled"
+                class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center space-x-1.5 transition-all">
+                <span wire:loading.remove wire:target="scanPrinters">🔄</span>
+                <span wire:loading wire:target="scanPrinters" class="animate-spin inline-block">⏳</span>
+                <span wire:loading.remove wire:target="scanPrinters">Escanear Red</span>
+                <span wire:loading wire:target="scanPrinters">Escaneando red local...</span>
             </button>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-2">
             @forelse($discoveredPrinters as $p)
-                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
-                    <div>
-                        <span class="text-xs font-black text-white block">{{ $p['name'] ?? 'Impresora' }}</span>
-                        <span class="text-[10px] text-slate-400">{{ $p['host'] ?? 'Local' }}</span>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2" wire:key="p-{{ $loop->index }}">
+                    <div class="overflow-hidden">
+                        <span class="text-xs font-black text-white block truncate" title="{{ $p['name'] ?? '' }}">{{ $p['name'] ?? 'Impresora' }}</span>
+                        <span class="text-[10px] text-slate-400 block truncate">{{ $p['host'] ?? 'Local' }}</span>
                     </div>
-                    <button wire:click="$set('cashierPrinter', '{{ $p['name'] }}')"
-                        class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 text-[10px] font-bold rounded-lg">
-                        Usar en Caja
-                    </button>
+                    <div class="flex items-center space-x-1 flex-shrink-0">
+                        <button wire:click="selectPrinterForCashier({{ $loop->index }})" title="Asignar a caja"
+                            class="px-2 py-1 bg-slate-800 hover:bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-lg border border-slate-700 transition-colors">
+                            Caja
+                        </button>
+                        <button wire:click="selectPrinterForKitchen({{ $loop->index }})" title="Asignar a cocina"
+                            class="px-2 py-1 bg-slate-800 hover:bg-orange-500/20 text-orange-400 text-[10px] font-bold rounded-lg border border-slate-700 transition-colors">
+                            Cocina
+                        </button>
+                    </div>
                 </div>
             @empty
                 <div class="col-span-full py-4 text-center text-slate-500 text-xs">
-                    Haz clic en "Escanear Red" para buscar colas de impresión activas.
+                    Haz clic en "Escanear Red" para buscar colas de impresión compartidas en otros equipos.
                 </div>
             @endforelse
         </div>

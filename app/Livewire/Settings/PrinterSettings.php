@@ -39,7 +39,8 @@ class PrinterSettings extends Component
             $this->binanceRate = (float) $config->binance_rate;
         }
 
-        $this->scanPrinters();
+        // Carga instantánea de impresoras locales (sin congelar la pantalla al abrir)
+        $this->discoveredPrinters = PrinterDiscoveryService::getLocalPrinters();
     }
 
     public function scanPrinters()
@@ -47,11 +48,45 @@ class PrinterSettings extends Component
         $this->isScanning = true;
         $this->discoveredPrinters = PrinterDiscoveryService::discoverPrinters();
         $this->isScanning = false;
-        $this->dispatch('notify', message: "Se detectaron " . count($this->discoveredPrinters) . " impresoras", type: 'info');
+        $this->dispatch('notify', message: "Se detectaron " . count($this->discoveredPrinters) . " impresoras en la red", type: 'info');
+    }
+
+    public function selectPrinterForCashier(int $index)
+    {
+        if (isset($this->discoveredPrinters[$index])) {
+            $p = $this->discoveredPrinters[$index];
+            $name = $this->normalizePrinterName($p['unc'] ?? $p['name'] ?? '');
+            $this->cashierPrinter = $name;
+            $this->dispatch('notify', message: "Impresora de caja asignada: {$name}", type: 'info');
+        }
+    }
+
+    public function selectPrinterForKitchen(int $index)
+    {
+        if (isset($this->discoveredPrinters[$index])) {
+            $p = $this->discoveredPrinters[$index];
+            $name = $this->normalizePrinterName($p['unc'] ?? $p['name'] ?? '');
+            $this->kitchenPrinter = $name;
+            $this->dispatch('notify', message: "Impresora de cocina asignada: {$name}", type: 'info');
+        }
+    }
+
+    protected function normalizePrinterName(string $printer): string
+    {
+        $printer = trim($printer);
+        // Si detecta un patrón IP o nombre de red con barras faltantes o invertidas
+        if (preg_match('/^\\\\*([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})(?:\\\\|\/)?(.+)$/', $printer, $matches)) {
+            return "\\\\{$matches[1]}\\" . ltrim($matches[2], '\\/');
+        }
+
+        return $printer;
     }
 
     public function saveSettings()
     {
+        $this->cashierPrinter = $this->normalizePrinterName($this->cashierPrinter);
+        $this->kitchenPrinter = $this->normalizePrinterName($this->kitchenPrinter);
+
         $config = Configuration::first();
         if ($config) {
             $config->update([
@@ -72,6 +107,14 @@ class PrinterSettings extends Component
     public function testPrint(string $type = 'cashier')
     {
         $printerName = ($type === 'kitchen') ? $this->kitchenPrinter : $this->cashierPrinter;
+        $printerName = $this->normalizePrinterName($printerName);
+
+        if ($type === 'kitchen') {
+            $this->kitchenPrinter = $printerName;
+        } else {
+            $this->cashierPrinter = $printerName;
+        }
+
         $width = ($type === 'kitchen') ? $this->kitchenWidth : $this->cashierWidth;
 
         $w = TicketPrinterService::getColumnWidth($width);

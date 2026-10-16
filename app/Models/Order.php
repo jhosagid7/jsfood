@@ -81,6 +81,47 @@ class Order extends Model
     }
 
     /**
+     * Aplicar descuento a la orden.
+     */
+    public function applyDiscount(float $discountAmount): void
+    {
+        $this->discount_usd = max(0, round($discountAmount, 2));
+        $this->calculateTotals();
+    }
+
+    /**
+     * Cancelar orden y sincronizar mesa.
+     */
+    public function cancel(?string $reason = null): void
+    {
+        $this->status = 'cancelled';
+        if ($reason) {
+            $this->notes = trim(($this->notes ? $this->notes . " | " : "") . "Cancelada: " . $reason);
+        }
+        $this->save();
+
+        if ($this->diningTable) {
+            $this->diningTable->syncStatus();
+        }
+    }
+
+    /**
+     * Eliminar la orden si no contiene items ni pagos.
+     */
+    public function deleteIfEmpty(): bool
+    {
+        if ($this->items()->count() === 0 && $this->payments()->count() === 0) {
+            $table = $this->diningTable;
+            $this->delete();
+            if ($table) {
+                $table->syncStatus();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Enviar comanda a cocina: actualiza tiempos y estados de items.
      */
     public function sendToKitchen(): void

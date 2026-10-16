@@ -19,17 +19,44 @@ class TableMap extends Component
     // Modal states
     public bool $showTableModal = false;
     public bool $showNewAccountModal = false;
+    public bool $showTakeoutModal = false;
+
+    // Vista y Pestaña activa
+    public string $viewTab = 'tables'; // 'tables' o 'takeout'
 
     // Nueva orden / sub-cuenta
     public string $newAccountLabel = '';
     public ?int $newCustomerId = null;
+    public string $takeoutLabel = '';
+    public ?int $takeoutCustomerId = null;
     public int $guestsCount = 2;
+    public array $knownReadyOrderIds = [];
 
     public function mount()
     {
         $firstArea = Area::orderBy('sort_order')->first();
         if ($firstArea) {
             $this->selectedAreaId = $firstArea->id;
+        }
+        $this->knownReadyOrderIds = Order::where('status', 'ready')->pluck('id')->toArray();
+    }
+
+    public function checkReadyOrders()
+    {
+        $currentReady = Order::with('diningTable')->where('status', 'ready')->get();
+        $currentReadyIds = $currentReady->pluck('id')->toArray();
+        $newReadyIds = array_diff($currentReadyIds, $this->knownReadyOrderIds);
+
+        if (!empty($newReadyIds)) {
+            $newOrders = $currentReady->whereIn('id', $newReadyIds);
+            foreach ($newOrders as $ord) {
+                $tableName = $ord->diningTable->name ?? 'Para Llevar';
+                $this->dispatch('notify', message: "🍽️ ¡Comida lista para entregar! {$tableName} ({$ord->account_label})", type: 'success');
+            }
+            $this->dispatch('play-waiter-chime');
+            $this->knownReadyOrderIds = $currentReadyIds;
+        } else {
+            $this->knownReadyOrderIds = $currentReadyIds;
         }
     }
 
@@ -110,6 +137,52 @@ class TableMap extends Component
         $this->dispatch('notify', message: "Pre-cuenta de {$order->account_label} enviada a imprimir", type: 'success');
     }
 
+    public function createTakeoutOrder()
+    {
+        $waiter = auth()->user() ?? \App\Models\User::where('email', 'mesonero1@jsfood.dev')->first() ?? \App\Models\User::first();
+
+        $label = trim($this->takeoutLabel);
+        if (empty($label)) {
+            $count = Order::where('service_type', 'takeout')->whereDate('created_at', today())->count() + 1;
+            $label = "Para Llevar #{$count}";
+        }
+
+        $order = Order::create([
+            'user_id' => $waiter->id,
+            'customer_id' => $this->takeoutCustomerId,
+            'service_type' => 'takeout',
+            'account_label' => $label,
+            'status' => 'pending',
+        ]);
+
+        $this->showTakeoutModal = false;
+        $this->reset(['takeoutLabel', 'takeoutCustomerId']);
+
+        $this->dispatch('notify', message: "Pedido '{$label}' creado exitosamente", type: 'success');
+
+        return redirect()->to("/pos/order?order_id={$order->id}");
+    }
+
+    public function cancelOrder(int $orderId)
+    {
+        $order = Order::find($orderId);
+        if (!$order) return;
+
+        if ($order->payments()->exists()) {
+            $this->dispatch('notify', message: "No se puede cancelar una orden con pagos o abonos", type: 'error');
+            return;
+        }
+
+        if ($order->deleteIfEmpty()) {
+            $this->dispatch('notify', message: "Orden vacía descartada", type: 'info');
+        } else {
+            $order->cancel("Cancelada por usuario");
+            $this->dispatch('notify', message: "Orden #{$order->order_number} cancelada exitosamente", type: 'success');
+        }
+
+        $this->showTableModal = false;
+    }
+
     public function render()
     {
         $areas = Area::where('is_active', true)->orderBy('sort_order')->get();
@@ -126,11 +199,18 @@ class TableMap extends Component
         $selectedTable = $this->selectedTableId ? Table::with('activeOrders.items.product', 'activeOrders.customer')->find($this->selectedTableId) : null;
         $customers = Customer::orderBy('name')->get();
 
+        $takeoutOrders = Order::where('service_type', 'takeout')
+            ->whereNotIn('status', ['paid', 'cancelled'])
+            ->with(['items.product', 'customer'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
         return view('livewire.tables.table-map', [
             'areas' => $areas,
             'tables' => $tables,
             'selectedTable' => $selectedTable,
             'customers' => $customers,
+            'takeoutOrders' => $takeoutOrders,
         ]);
     }
 }

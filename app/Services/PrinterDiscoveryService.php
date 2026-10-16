@@ -10,13 +10,11 @@ use Carbon\Carbon;
 class PrinterDiscoveryService
 {
     /**
-     * Discover all local and shared network printers on the LAN.
+     * Get only local and mapped Windows print queues (Instant, ~0.05s).
      */
-    public static function discoverPrinters(): array
+    public static function getLocalPrinters(): array
     {
         $discovered = [];
-
-        // 1. Get local and mapped network printers installed on Windows
         try {
             $localPrintersOutput = @shell_exec('powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName | ConvertTo-Json" 2>&1');
             if ($localPrintersOutput) {
@@ -61,6 +59,16 @@ class PrinterDiscoveryService
         } catch (\Throwable $e) {
             Log::warning("Local printer discovery error: " . $e->getMessage());
         }
+
+        return $discovered;
+    }
+
+    /**
+     * Discover all local and shared network printers on the LAN.
+     */
+    public static function discoverPrinters(): array
+    {
+        $discovered = self::getLocalPrinters();
 
         // 2. Collect known credentials from database
         $credentials = [];

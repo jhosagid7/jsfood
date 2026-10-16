@@ -22,6 +22,15 @@ class DeviceManager extends Component
         }
     }
 
+    public function updateName(int $id, string $name)
+    {
+        $device = DeviceAuthorization::find($id);
+        if ($device) {
+            $device->update(['name' => trim($name) ?: 'Dispositivo Móvil']);
+            $this->dispatch('notify', message: "Nombre del dispositivo actualizado", type: 'success');
+        }
+    }
+
     public function approveDevice(int $id)
     {
         $device = DeviceAuthorization::find($id);

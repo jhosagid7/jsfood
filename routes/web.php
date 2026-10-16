@@ -20,6 +20,10 @@ Route::post('/logout', function () {
     return redirect()->route('login');
 })->name('logout');
 
+Route::get('/access-denied', function () {
+    return view('errors.access-denied');
+})->name('access.denied');
+
 // Rutas protegidas bajo autenticación
 Route::middleware(['auth'])->group(function () {
     // Redirigir inicio al mapa visual de mesas

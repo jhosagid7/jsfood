@@ -57,7 +57,11 @@
                 <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3" wire:key="device-{{ $dev->id }}">
                     <div>
                         <div class="flex items-center space-x-2">
-                            <h4 class="text-sm font-black text-white">{{ $dev->name ?? 'Dispositivo Móvil' }}</h4>
+                            <input type="text" value="{{ $dev->name }}" 
+                                wire:change="updateName({{ $dev->id }}, $event.target.value)"
+                                placeholder="Nombre (ej: Tablet Mesonero 1)"
+                                title="Haz clic para renombrar este dispositivo"
+                                class="bg-slate-900 border border-slate-700 hover:border-amber-500 focus:border-amber-500 rounded-lg px-2.5 py-1 text-sm font-black text-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors w-44 sm:w-60">
                             <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase {{ $dev->status === 'approved' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : ($dev->status === 'pending' ? 'bg-amber-950 text-amber-400 border border-amber-800' : 'bg-red-950 text-red-400 border border-red-800') }}">
                                 {{ $dev->status }}
                             </span>

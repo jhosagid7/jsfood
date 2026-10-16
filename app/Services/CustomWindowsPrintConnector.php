@@ -151,8 +151,8 @@ class CustomWindowsPrintConnector implements PrintConnector
 
     protected function finalizeWin($data)
     {
-        $targetHost = $this->hostname ? self::resolveHostnameToIp($this->hostname) : null;
-        $hostToUse = $targetHost ?: $this->hostname;
+        // Don't forcefully convert hostnames to IPs because Windows SMB authentication relies on the exact NetBIOS hostname
+        $hostToUse = $this->hostname;
         $printerName = $this->isLocal ? $this->printerName : ("\\\\" . $hostToUse . "\\" . $this->printerName);
 
         // 1. Primary Method: Ultra-Fast Native RawPrint Helper (< 80ms)
@@ -168,8 +168,6 @@ class CustomWindowsPrintConnector implements PrintConnector
         // If rawprint failed and it has special network SMB credentials, try resolving IP and authenticating
         $netExe = self::getSystemToolPath('net');
         if (!$this->isLocal && $this->userName !== null) {
-            $targetHost = self::resolveHostnameToIp($this->hostname);
-            $printerName = "\\\\" . ($targetHost ?: $this->hostname) . "\\" . $this->printerName;
             $device = $printerName;
             $user = "/user:" . ($this->workgroup != null ? ($this->workgroup . "\\") : "") . $this->userName;
             if ($this->userPassword == null) {
@@ -194,25 +192,21 @@ class CustomWindowsPrintConnector implements PrintConnector
             \Illuminate\Support\Facades\Log::warning("Win32 Spooler print attempt failed for {$printerName}: " . $e->getMessage());
         }
 
-        // 3. Fallback Method: copy to device UNC / write
+        // 3. Fallback Method: direct copy to UNC share
         if (!$this->isLocal) {
             $device = $printerName;
             $filename = tempnam(sys_get_temp_dir(), "escpos");
             file_put_contents($filename, $data);
             if (!@copy($filename, $device)) {
-                 if (@file_put_contents("LPT1", $data) !== false) {
-                     unlink($filename);
-                     return;
-                 }
                  unlink($filename);
                  $authInfo = $this->userName ? " with User: " . $this->userName : " (No Auth)";
-                 throw new Exception("Failed to copy file to printer at $device $authInfo");
+                 throw new Exception("No se pudo enviar el archivo a la impresora en {$device}{$authInfo}. Verifica que la impresora esté encendida, compartida y accesible.");
             }
             unlink($filename);
         } else {
             $target = rtrim($this->printerName, ':');
             if (@file_put_contents($target, $data) === false && @file_put_contents($this->printerName, $data) === false) {
-                throw new Exception("Failed to write file to printer at " . $this->printerName);
+                throw new Exception("No se pudo escribir en la impresora local {$this->printerName}");
             }
         }
     }
@@ -323,6 +317,47 @@ class CustomWindowsPrintConnector implements PrintConnector
     }
 
     /**
+     * Resolve an IP address to its NetBIOS or hosts computer name dynamically.
+     */
+    public static function resolveIpToHostname($ip): ?string
+    {
+        if (empty($ip) || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return null;
+        }
+
+        $cacheKey = "printer_ip_to_host_" . md5($ip);
+        try {
+            if (class_exists('\Illuminate\Support\Facades\Cache')) {
+                $cached = \Illuminate\Support\Facades\Cache::get($cacheKey);
+                if ($cached) return $cached;
+            }
+        } catch (\Throwable $e) {}
+
+        // 1. Check Windows hosts file
+        try {
+            $hosts = @file_get_contents('C:\\Windows\\System32\\drivers\\etc\\hosts');
+            if ($hosts && preg_match('/' . preg_quote($ip, '/') . '\s+([a-zA-Z0-9\-_]+)/i', $hosts, $m)) {
+                $host = trim($m[1]);
+                self::cacheResolvedIp($cacheKey, $host);
+                return $host;
+            }
+        } catch (\Throwable $e) {}
+
+        // 2. Check nbtstat
+        if (PHP_OS_FAMILY === 'Windows') {
+            $nbtExe = self::getSystemToolPath('nbtstat');
+            $out = @shell_exec($nbtExe . ' -A ' . escapeshellarg($ip));
+            if ($out && preg_match('/^\s*([a-zA-Z0-9\-_]+)\s*<00>/im', $out, $m)) {
+                $host = trim($m[1]);
+                self::cacheResolvedIp($cacheKey, $host);
+                return $host;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Get the absolute path to powershell.exe across all Windows installations.
      */
     public static function getPowerShellPath()
@@ -406,14 +441,46 @@ class CustomWindowsPrintConnector implements PrintConnector
         $cmd = '"' . $rawPrintExe . '" ' . escapeshellarg($printerName) . ' ' . escapeshellarg($tmpFile) . ' 2>&1';
         exec($cmd, $out, $ret);
 
-        @unlink($tmpFile);
-
         if ($ret === 0) {
+            @unlink($tmpFile);
             \Illuminate\Support\Facades\Log::info("sendToNativeRawPrinter succeeded for {$printerName}: " . implode(" | ", $out));
             return true;
         }
 
         \Illuminate\Support\Facades\Log::warning("sendToNativeRawPrinter failed for {$printerName} with exit code {$ret}: " . implode(" | ", $out));
+
+        // If it failed on a UNC path, try alternative alias (IP <-> Hostname)
+        if (str_starts_with($printerName, '\\\\')) {
+            $parts = explode('\\', ltrim($printerName, '\\'));
+            if (count($parts) >= 2) {
+                $host = $parts[0];
+                $share = $parts[1];
+                $altHost = null;
+
+                if (filter_var($host, FILTER_VALIDATE_IP)) {
+                    $altHost = self::resolveIpToHostname($host);
+                } else {
+                    $altHost = self::resolveHostnameToIp($host);
+                }
+
+                if ($altHost && strtolower($altHost) !== strtolower($host)) {
+                    $altPrinter = "\\\\{$altHost}\\{$share}";
+                    \Illuminate\Support\Facades\Log::info("Retrying sendToNativeRawPrinter with alias {$altPrinter}");
+                    $altCmd = '"' . $rawPrintExe . '" ' . escapeshellarg($altPrinter) . ' ' . escapeshellarg($tmpFile) . ' 2>&1';
+                    $altOut = [];
+                    exec($altCmd, $altOut, $altRet);
+                    if ($altRet === 0) {
+                        @unlink($tmpFile);
+                        \Illuminate\Support\Facades\Log::info("sendToNativeRawPrinter alias succeeded for {$altPrinter}: " . implode(" | ", $altOut));
+                        return true;
+                    } else {
+                        \Illuminate\Support\Facades\Log::warning("sendToNativeRawPrinter alias also failed for {$altPrinter}: " . implode(" | ", $altOut));
+                    }
+                }
+            }
+        }
+
+        @unlink($tmpFile);
         return false;
     }
 

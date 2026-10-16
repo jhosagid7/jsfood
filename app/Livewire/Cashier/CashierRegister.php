@@ -10,21 +10,33 @@ use App\Models\Payment;
 use App\Models\Configuration;
 use App\Helpers\CurrencyHelper;
 use App\Services\TicketPrinterService;
+use Livewire\WithFileUploads;
+use App\Models\Bank;
 use Livewire\Attributes\Layout;
 
 #[Layout('layouts.app')]
 class CashierRegister extends Component
 {
+    use WithFileUploads;
+
     public ?int $selectedOrderId = null;
 
     // Métodos de pago
-    public string $selectedPaymentMethod = 'cash_usd'; // 'cash_usd', 'cash_ved', 'cash_cop', 'card', 'mobile_pay', 'zelle', 'binance_usdt', 'credit'
+    public string $selectedPaymentMethod = 'cash_usd'; // 'cash_usd', 'cash_ved', 'cash_cop', 'card', 'mobile_pay', 'zelle', 'binance_usdt', 'nequi', 'credit'
+    public ?int $selectedBankId = null;
+    public $proofImage;
     public float $amountReceived = 0.00;
     public string $paymentReference = '';
     public array $appliedPayments = []; // Lista de abonos/pagos parciales para pagos mixtos
 
     // Cliente
     public ?int $selectedCustomerId = null;
+
+    // Descuentos
+    public bool $showDiscountModal = false;
+    public string $discountType = 'percent'; // 'percent' o 'fixed'
+    public float $discountValue = 0.00;
+    public string $discountReason = '';
 
     public function mount()
     {
@@ -39,15 +51,142 @@ class CashierRegister extends Component
         }
     }
 
+    public function updatedSelectedPaymentMethod($method)
+    {
+        $this->proofImage = null;
+        $this->paymentReference = '';
+
+        // Auto-asignar banco sugerido según el método
+        if ($method === 'mobile_pay') {
+            $bank = Bank::where('type', 'pago_movil')->where('state', true)->first();
+            $this->selectedBankId = $bank?->id;
+        } elseif ($method === 'zelle') {
+            $bank = Bank::where('type', 'zelle')->where('state', true)->first();
+            $this->selectedBankId = $bank?->id;
+        } elseif ($method === 'binance_usdt') {
+            $bank = Bank::where('type', 'binance')->where('state', true)->first();
+            $this->selectedBankId = $bank?->id;
+        } elseif ($method === 'nequi') {
+            $bank = Bank::where('type', 'nequi')->where('state', true)->first();
+            $this->selectedBankId = $bank?->id;
+        } elseif ($method === 'cash_cop') {
+            $bank = Bank::where('currency_code', 'COP')->where('state', true)->first();
+            $this->selectedBankId = $bank?->id;
+        } else {
+            $this->selectedBankId = null;
+        }
+
+        $this->recalculateRemaining();
+    }
+
     public function selectOrder(int $orderId)
     {
         $this->selectedOrderId = $orderId;
-        $order = Order::with('items.product', 'diningTable', 'customer')->find($orderId);
+        $order = Order::with('items.product', 'diningTable', 'customer', 'payments.bank')->find($orderId);
         if ($order) {
             $this->selectedCustomerId = $order->customer_id;
-            $this->amountReceived = $order->total_usd;
-            $this->appliedPayments = [];
+            $this->discountValue = $order->discount_usd > 0 ? (float) $order->discount_usd : 0.00;
+            $this->discountType = 'fixed';
+            
+            // Cargar los abonos/pagos ya registrados en la BD para esta orden
+            $this->appliedPayments = $order->payments->map(fn($p) => [
+                'id' => $p->id,
+                'method' => $p->payment_method,
+                'bank_id' => $p->bank_id,
+                'bank_name' => $p->bank ? $p->bank->name : null,
+                'currency' => $p->currency_code,
+                'rate' => (float) $p->exchange_rate,
+                'amount_currency' => (float) $p->amount_currency,
+                'amount_usd' => (float) $p->amount_usd,
+                'reference' => $p->reference ?? '',
+                'proof_image' => $p->proof_image,
+            ])->toArray();
+
+            $this->recalculateRemaining();
         }
+    }
+
+    public function openDiscountModal()
+    {
+        $order = Order::find($this->selectedOrderId);
+        if (!$order) return;
+        $this->discountValue = (float) $order->discount_usd;
+        $this->discountType = 'fixed';
+        $this->showDiscountModal = true;
+    }
+
+    public function applyPresetDiscount(float $percent)
+    {
+        $order = Order::find($this->selectedOrderId);
+        if (!$order) return;
+        
+        $discountUsd = round(($order->subtotal_usd * $percent) / 100, 2);
+        $order->applyDiscount($discountUsd);
+        $this->discountValue = $discountUsd;
+        $this->discountType = 'percent';
+        $this->showDiscountModal = false;
+        $this->recalculateRemaining();
+        $this->dispatch('notify', message: "Descuento del {$percent}% aplicado (-$" . number_format($discountUsd, 2) . ")", type: 'success');
+    }
+
+    public function saveDiscount()
+    {
+        $order = Order::find($this->selectedOrderId);
+        if (!$order) return;
+
+        if ($this->discountType === 'percent') {
+            $discountUsd = round(($order->subtotal_usd * (float) $this->discountValue) / 100, 2);
+        } else {
+            $discountUsd = round((float) $this->discountValue, 2);
+        }
+
+        if ($discountUsd < 0) {
+            $this->dispatch('notify', message: "El descuento no puede ser negativo", type: 'warning');
+            return;
+        }
+
+        if ($discountUsd > $order->subtotal_usd) {
+            $this->dispatch('notify', message: "El descuento no puede superar el subtotal de la orden", type: 'warning');
+            return;
+        }
+
+        $order->applyDiscount($discountUsd);
+        $this->showDiscountModal = false;
+        $this->recalculateRemaining();
+        $this->dispatch('notify', message: "Descuento de $" . number_format($discountUsd, 2) . " aplicado correctamente", type: 'success');
+    }
+
+    public function removeDiscount()
+    {
+        $order = Order::find($this->selectedOrderId);
+        if (!$order) return;
+
+        $order->applyDiscount(0.00);
+        $this->discountValue = 0.00;
+        $this->showDiscountModal = false;
+        $this->recalculateRemaining();
+        $this->dispatch('notify', message: "Descuento removido", type: 'info');
+    }
+
+    public function cancelSelectedOrder()
+    {
+        $order = Order::find($this->selectedOrderId);
+        if (!$order) return;
+
+        if ($order->payments()->exists()) {
+            $this->dispatch('notify', message: "No se puede cancelar una orden con pagos o abonos registrados. Elimina los abonos primero.", type: 'error');
+            return;
+        }
+
+        if ($order->deleteIfEmpty()) {
+            $this->dispatch('notify', message: "Orden vacía eliminada del sistema", type: 'info');
+        } else {
+            $order->cancel("Cancelada desde Caja");
+            $this->dispatch('notify', message: "Orden #{$order->order_number} cancelada exitosamente", type: 'success');
+        }
+
+        $this->reset(['selectedOrderId', 'appliedPayments', 'paymentReference', 'discountValue']);
+        $this->mount();
     }
 
     public function addPayment()
@@ -62,7 +201,7 @@ class CashierRegister extends Component
         if ($this->selectedPaymentMethod === 'cash_ved' || $this->selectedPaymentMethod === 'mobile_pay') {
             $rate = $config->bcv_rate ?? 60.00;
             $currencyCode = 'VED';
-        } elseif ($this->selectedPaymentMethod === 'cash_cop') {
+        } elseif ($this->selectedPaymentMethod === 'cash_cop' || $this->selectedPaymentMethod === 'nequi') {
             $rate = $config->cop_rate ?? 4100.00;
             $currencyCode = 'COP';
         } elseif ($this->selectedPaymentMethod === 'binance_usdt') {
@@ -70,29 +209,74 @@ class CashierRegister extends Component
             $currencyCode = 'USDT';
         }
 
+        $amountInCurrency = (float) $this->amountReceived;
+        if ($amountInCurrency <= 0) {
+            $this->dispatch('notify', message: "El monto del pago debe ser mayor a 0", type: 'warning');
+            return;
+        }
+
         // Si se ingresó en moneda local, calcular equivalente en USD
-        $amountInCurrency = $this->amountReceived;
         $amountUsd = ($currencyCode === 'USD' || $currencyCode === 'USDT') ? $amountInCurrency : ($amountInCurrency / $rate);
+        $amountUsd = round($amountUsd, 2);
+
+        $cashier = auth()->user() ?? \App\Models\User::where('email', 'cajero@jsfood.dev')->first() ?? \App\Models\User::first();
+
+        // Subir comprobante si fue adjuntado
+        $proofPath = null;
+        if ($this->proofImage) {
+            $this->validate([
+                'proofImage' => 'image|max:5120', // Máx 5MB
+            ]);
+            $proofPath = $this->proofImage->store('proofs', 'public');
+        }
+
+        $bank = $this->selectedBankId ? Bank::find($this->selectedBankId) : null;
+
+        // 1. Guardar de inmediato en la base de datos para que no se pierda al salir
+        $payment = Payment::create([
+            'order_id' => $order->id,
+            'user_id' => $cashier->id,
+            'bank_id' => $bank?->id,
+            'payment_method' => $this->selectedPaymentMethod,
+            'currency_code' => $currencyCode,
+            'exchange_rate' => $rate,
+            'amount_currency' => $amountInCurrency,
+            'amount_usd' => $amountUsd,
+            'change_usd' => 0.00,
+            'reference' => trim($this->paymentReference),
+            'proof_image' => $proofPath,
+        ]);
 
         $this->appliedPayments[] = [
+            'id' => $payment->id,
             'method' => $this->selectedPaymentMethod,
+            'bank_id' => $bank?->id,
+            'bank_name' => $bank?->name,
             'currency' => $currencyCode,
             'rate' => $rate,
             'amount_currency' => $amountInCurrency,
-            'amount_usd' => round($amountUsd, 2),
+            'amount_usd' => $amountUsd,
             'reference' => trim($this->paymentReference),
+            'proof_image' => $proofPath,
         ];
 
-        $this->reset(['paymentReference']);
+        $this->reset(['paymentReference', 'proofImage']);
         $this->recalculateRemaining();
+
+        $this->dispatch('notify', message: "Abono de \${$amountUsd} guardado exitosamente", type: 'success');
     }
 
     public function removePayment(int $index)
     {
         if (isset($this->appliedPayments[$index])) {
+            $p = $this->appliedPayments[$index];
+            if (!empty($p['id'])) {
+                Payment::where('id', $p['id'])->where('order_id', $this->selectedOrderId)->delete();
+            }
             unset($this->appliedPayments[$index]);
             $this->appliedPayments = array_values($this->appliedPayments);
             $this->recalculateRemaining();
+            $this->dispatch('notify', message: "Abono eliminado de la cuenta", type: 'info');
         }
     }
 
@@ -108,15 +292,16 @@ class CashierRegister extends Component
 
     public function processCheckout()
     {
-        $order = Order::with('items.product', 'diningTable', 'customer')->find($this->selectedOrderId);
+        $order = Order::with('items.product', 'diningTable', 'customer', 'payments')->find($this->selectedOrderId);
         if (!$order || $order->items->isEmpty()) {
             $this->dispatch('notify', message: "No hay orden válida para cobrar", type: 'error');
             return;
         }
 
-        // Si no se agregaron pagos mixtos manuales, registrar el total con el método seleccionado
+        // Si no se agregaron pagos previos, registrar el total con el método seleccionado
         if (empty($this->appliedPayments)) {
             $this->addPayment();
+            $order->load('payments');
         }
 
         $totalPaidUsd = collect($this->appliedPayments)->sum('amount_usd');
@@ -147,19 +332,14 @@ class CashierRegister extends Component
             $customer->adjustBalance($creditAmount, 'credit_charge', $order->id, $cashier->id, 'ORD-' . $order->order_number, "Cargo por orden {$order->order_number}");
         }
 
-        // 2. Registrar los pagos
-        foreach ($this->appliedPayments as $p) {
-            Payment::create([
-                'order_id' => $order->id,
-                'user_id' => $cashier->id,
-                'payment_method' => $p['method'],
-                'currency_code' => $p['currency'],
-                'exchange_rate' => $p['rate'],
-                'amount_currency' => $p['amount_currency'],
-                'amount_usd' => $p['amount_usd'],
-                'change_usd' => max(0, $totalPaidUsd - $order->total_usd),
-                'reference' => $p['reference'],
-            ]);
+        // 2. Si hubo cambio o vuelto, registrarlo en el último pago
+        $changeUsd = max(0, $totalPaidUsd - $order->total_usd);
+        if ($changeUsd > 0 && !empty($this->appliedPayments)) {
+            $lastIndex = count($this->appliedPayments) - 1;
+            $lastPaymentId = $this->appliedPayments[$lastIndex]['id'] ?? null;
+            if ($lastPaymentId) {
+                Payment::where('id', $lastPaymentId)->update(['change_usd' => $changeUsd]);
+            }
         }
 
         // 3. Cerrar y pagar la orden (descuenta stock e insumos y sincroniza mesa)
@@ -189,12 +369,14 @@ class CashierRegister extends Component
         $selectedOrder = $this->selectedOrderId ? Order::with(['diningTable', 'customer', 'items.product'])->find($this->selectedOrderId) : null;
         $customers = Customer::orderBy('name')->get();
         $config = Configuration::first();
+        $banks = Bank::where('state', true)->orderBy('sort')->get();
 
         return view('livewire.cashier.cashier-register', [
             'pendingOrders' => $pendingOrders,
             'selectedOrder' => $selectedOrder,
             'customers' => $customers,
             'config' => $config,
+            'banks' => $banks,
         ]);
     }
 }

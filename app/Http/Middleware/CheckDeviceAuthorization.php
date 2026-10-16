@@ -15,13 +15,8 @@ class CheckDeviceAuthorization
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Skip if not installed
-        if (config('app.installed') !== true) {
-            return $next($request);
-        }
-
-        // Exclude public routes and login/logout (Both Web and API)
-        if ($request->is('login', 'logout', 'register', 'password/*', 'access-denied', 'api/login', 'api/vip/login')) {
+        // Exclude public routes, login/logout, livewire assets, and access-denied
+        if ($request->is('login', 'logout', 'register', 'password/*', 'access-denied', 'livewire/*', 'up')) {
             return $next($request);
         }
 
@@ -107,7 +102,7 @@ class CheckDeviceAuthorization
             // New Device - Use provided token or generate UUID
             $token = $token ?: (string) \Illuminate\Support\Str::uuid();
             
-            $maxDevices = config('tenant.max_devices', 1);
+            $maxDevices = $config->max_devices ?? 10;
             $approvedCount = \App\Models\DeviceAuthorization::where('status', 'approved')->count();
 
             if ($approvedCount >= $maxDevices) {
