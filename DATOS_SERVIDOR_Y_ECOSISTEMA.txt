@@ -1,0 +1,58 @@
+================================================================================
+          DATOS Y CREDENCIALES DEL ECOSISTEMA CLOUD - PLÁSTICOS M&F STEEL
+================================================================================
+
+1. DOMINIO WEB PRINCIPAL
+--------------------------------------------------------------------------------
+- Dominio:            plasticosmyf.com
+- Registrador:        Porkbun (https://porkbun.com)
+- Usuario Porkbun:    jhosagid
+- Correo Registrado:  jhosagid77@gmail.com
+- Vigencia:           Hasta el 18 de Agosto de 2027
+- Estado:             ACTIVO / PROTEGIDO (Whois Privacy Gratis)
+
+
+2. SERVIDOR VPS (CONTABO)
+--------------------------------------------------------------------------------
+- Proveedor:          Contabo (https://contabo.com)
+- Cliente ID:         15311805
+- Orden ID:           15311806 (Pagado - 12 Meses)
+- Plan:               Cloud VPS 4 (4 vCPU / 8 GB RAM / 100 GB SSD)
+- Sistema Operativo:  Ubuntu 24.04 LTS (64-bit)
+- Región:             United States (St. Louis US-central)
+- Usuario Principal:  root
+- CONTRASEÑA ROOT:    kEl2c35BJl8T0Oh5
+- DIRECCIÓN IP VPS:   209.126.81.6
+
+
+3. MAPA DE DOMINIOS Y SERVICIOS EN EL VPS
+--------------------------------------------------------------------------------
+A) MARCA COMERCIAL / FÁBRICA DE PLÁSTICOS:
+   - https://plasticosmyf.com / https://tienda.plasticosmyf.com
+     Función: Catálogo público, tienda e-commerce, portal de clientes, consulta de facturas, abonos y pagos.
+
+B) MARCA TECNOLÓGICA / DESARROLLO (JHONNY PIRELA):
+   - https://licencias.jhonnypirela.dev
+     Función: Servidor Central de Licencias y Auto-Updates para JSPOS Sales.
+     Acceso Web: Contraseña Maestra / PIN: 2026
+
+   - soporte.jhonnypirela.dev (SERVIDOR RUSTDESK - ANYDESK PROPIO):
+     Función: Soporte remoto 24/7 sin límites ni intermediarios.
+     Host ID / Rendezvous Server: soporte.jhonnypirela.dev:21116
+     Relay Server:                soporte.jhonnypirela.dev:21117
+     Clave Pública Ed25519:       eI5U5mbVwyJ+7cdtaZa2fEs+PsDWPejoPCq9X6HDn9k=
+     Config String Automático:    host=soporte.jhonnypirela.dev,key=eI5U5mbVwyJ+7cdtaZa2fEs+PsDWPejoPCq9X6HDn9k=
+
+   - https://vpn.jhonnypirela.dev (SERVIDOR HEADSCALE / TAILSCALE PRIVADO):
+     Función: Servidor VPN Mesh autoalojado para interconectar cajas, sucursales y BD.
+     Panel Web UI:                https://vpn.jhonnypirela.dev/web
+     API Key para Web UI:         pXAUSyVS1Q.nozCIbFYFwWHYUp0ioNtBOEwbsuTjpqn9rNgpgpEjgk
+     Usuario / Namespace Default: jspos
+     Pre-Auth Key Reutilizable:   31b712293f7a58f940ba91064e9dacfde21906d808c9844a
+     Comando Conexión Windows/Linux: tailscale up --login-server https://vpn.jhonnypirela.dev --authkey 31b712293f7a58f940ba91064e9dacfde21906d808c9844a
+     Rango de IPs Privadas:       100.64.0.0/10 (IPv4) / MagicDNS: jsmesh.internal
+
+
+================================================================================
+GUARDAR ESTE ARCHIVO EN UN LUGAR SEGURO. NO COMPARTIR LA CONTRASEÑA ROOT.
+================================================================================

@@ -1,0 +1,1093 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use ZipArchive;
+
+class UpdateService
+{
+    protected $owner;
+    protected $repo;
+    protected $currentVersion;
+
+    public function __construct()
+    {
+        $this->owner = env('GITHUB_REPO_OWNER', 'jhosagid7');
+        $this->repo = env('GITHUB_REPO_NAME', 'jsfood');
+        // Get current version from CHANGELOG or config. For now assuming config or hardcoded for dev.
+        // Ideally we parse CHANGELOG.md or have a version file.
+        // Let's assume the user will define APP_VERSION in .env or we parse it.
+        // For now, we'll fetch the latest tag from git if available, or use a fallback.
+    }
+
+    public function getCurrentVersion()
+    {
+        $path = base_path('version.txt');
+        if (File::exists($path)) {
+            return trim(File::get($path));
+        }
+        return 'v1.0.0';
+    }
+
+    public function checkUpdate()
+    {
+        $currentVersion = $this->getCurrentVersion();
+        $v2 = ltrim($currentVersion, 'v');
+        $errorMessage = null;
+
+        $headers = ['User-Agent' => 'JSPOS-Updater'];
+        $token = env('GITHUB_TOKEN') ?: config('services.github.token');
+        if (!empty($token)) {
+            $headers['Authorization'] = 'Bearer ' . $token;
+        }
+
+        // 1. Try releases endpoint
+        try {
+            $url = "https://api.github.com/repos/{$this->owner}/{$this->repo}/releases/latest";
+            $response = Http::withHeaders($headers)->timeout(15)->get($url);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                $latestVersion = $data['tag_name'] ?? '';
+                $v1 = ltrim($latestVersion, 'v');
+
+                if (version_compare($v1, $v2, '>')) {
+                    return [
+                        'new_version' => 'v' . $v1,
+                        'current_version' => $currentVersion,
+                        'url' => $data['zipball_url'] ?? "https://github.com/{$this->owner}/{$this->repo}/archive/refs/tags/v{$v1}.zip",
+                        'body' => $data['body'] ?? '',
+                        'has_update' => true
+                    ];
+                }
+                
+                return [
+                    'has_update' => false,
+                    'current_version' => $currentVersion
+                ];
+            } else {
+                Log::warning("GitHub releases check returned status {$response->status()}: " . $response->body());
+                $errorMessage = "Respuesta de GitHub (" . $response->status() . "): " . ($response->status() === 403 ? 'Límite de consultas excedido en esta red IP' : 'No se pudo consultar el servidor de versiones');
+            }
+        } catch (\Exception $e) {
+            Log::error("Update check via releases failed: " . $e->getMessage());
+            $errorMessage = "Error de conexión: " . $e->getMessage();
+        }
+
+        // 2. Try tags endpoint
+        try {
+            $tagsUrl = "https://api.github.com/repos/{$this->owner}/{$this->repo}/tags";
+            $tagsResponse = Http::withHeaders($headers)->timeout(15)->get($tagsUrl);
+
+            if ($tagsResponse->successful()) {
+                $tags = $tagsResponse->json();
+                if (is_array($tags) && count($tags) > 0) {
+                    $latestTag = $tags[0]['name'] ?? '';
+                    $v1 = ltrim($latestTag, 'v');
+
+                    if (version_compare($v1, $v2, '>')) {
+                        return [
+                            'new_version' => 'v' . $v1,
+                            'current_version' => $currentVersion,
+                            'url' => "https://github.com/{$this->owner}/{$this->repo}/archive/refs/tags/v{$v1}.zip",
+                            'body' => 'Nueva versión detectada desde repositorio oficial de etiquetas.',
+                            'has_update' => true
+                        ];
+                    }
+                    
+                    return [
+                        'has_update' => false,
+                        'current_version' => $currentVersion
+                    ];
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Update check via tags failed: " . $e->getMessage());
+        }
+
+        // 3. Fallback 3: Unlimited CDN Raw Check (Bypasses GitHub REST API 403 Rate Limits)
+        try {
+            foreach (['develop', 'main', 'master'] as $branch) {
+                $rawVersionUrl = "https://raw.githubusercontent.com/{$this->owner}/{$this->repo}/{$branch}/version.txt";
+                $rawResponse = Http::withHeaders(['User-Agent' => 'JSPOS-Updater'])->timeout(15)->get($rawVersionUrl);
+
+                if ($rawResponse->successful()) {
+                    $remoteVersion = trim($rawResponse->body());
+                    $v1 = ltrim($remoteVersion, 'v');
+
+                    if (!empty($v1) && version_compare($v1, $v2, '>')) {
+                        $changelogBody = 'Nueva versión detectada mediante servidor CDN oficial.';
+                        try {
+                            $rawChangelogUrl = "https://raw.githubusercontent.com/{$this->owner}/{$this->repo}/{$branch}/CHANGELOG.md";
+                            $changelogResponse = Http::timeout(10)->get($rawChangelogUrl);
+                            if ($changelogResponse->successful()) {
+                                $content = $changelogResponse->body();
+                                $searchVersion = str_replace('v', '', $v1);
+                                if (preg_match('/## \[' . preg_quote($searchVersion, '/') . '\][^\n]*\n(.*?)(?=\n## \[|\z)/s', $content, $matches)) {
+                                    $changelogBody = trim($matches[1]);
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            // Ignore changelog fetch error
+                        }
+
+                        $tag = 'v' . $v1;
+                        return [
+                            'new_version' => $tag,
+                            'current_version' => $currentVersion,
+                            'url' => "https://github.com/{$this->owner}/{$this->repo}/archive/refs/tags/{$tag}.zip",
+                            'body' => $changelogBody,
+                            'has_update' => true
+                        ];
+                    }
+
+                    if (!empty($v1) && version_compare($v1, $v2, '<=')) {
+                        return [
+                            'has_update' => false,
+                            'current_version' => $currentVersion
+                        ];
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Update check via raw CDN failed: " . $e->getMessage());
+        }
+
+        return [
+            'has_update' => false,
+            'current_version' => $currentVersion,
+            'error' => $errorMessage ?? 'No se pudo conectar con el servidor de actualizaciones. Por favor verifique su conexión a internet.'
+        ];
+    }
+
+    public function runBackup()
+    {
+        try {
+            Artisan::call('backup:run', ['--only-db' => true, '--disable-notifications' => true]);
+            return true;
+        } catch (\Exception $e) {
+            throw new \Exception("Backup failed: " . $e->getMessage());
+        }
+    }
+
+    public function downloadUpdate($downloadUrl)
+    {
+        @set_time_limit(0);
+        @ini_set('max_execution_time', 0);
+        @ignore_user_abort(true);
+        $maxAttempts = 5; // Increased from 2 to 5 for production stability
+        $lastException = null;
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            $tempPath = storage_path('app/temp_update_' . uniqid() . '.zip');
+            try {
+                Log::info("Update download attempt {$attempt} of {$maxAttempts}: {$downloadUrl}");
+                
+                $response = Http::withHeaders([
+                    'User-Agent' => 'JSPOS-Updater'
+                ])
+                ->withOptions([
+                    'curl' => [
+                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1, // Force HTTP/1.1 to avoid common SSL/TLS EOF errors in HTTP/2
+                        CURLOPT_SSL_VERIFYPEER => false,               // Temporary fix for SSL certificate issues if any
+                        CURLOPT_TCP_KEEPALIVE => 1,                   // Help keep connection alive
+                    ]
+                ])
+                ->timeout(900)          // Increased to 15 minutes
+                ->connectTimeout(60)    // Increased to 60 seconds
+                ->sink($tempPath)
+                ->get($downloadUrl);
+
+                if (!$response->successful()) {
+                    throw new \Exception("Download failed with status: " . $response->status());
+                }
+
+                Log::info("Update downloaded successfully on attempt {$attempt}.");
+                
+                // Store path in session for the install phase
+                session(['latest_downloaded_update_zip' => $tempPath]);
+                
+                return true;
+
+            } catch (\Exception $e) {
+                $lastException = $e;
+                Log::warning("Download attempt {$attempt} failed: " . $e->getMessage());
+                
+                // Clean partial download before retry
+                if (File::exists($tempPath)) {
+                    @File::delete($tempPath);
+                }
+
+                if ($attempt < $maxAttempts) {
+                    // Exponential backoff
+                    $sleepTime = $attempt * 3; 
+                    sleep($sleepTime); 
+                }
+            }
+        }
+
+        throw new \Exception("Download failed after {$maxAttempts} attempts: " . $lastException->getMessage());
+    }
+
+    public function installUpdate($newVersion = null)
+    {
+        @set_time_limit(0);
+        @ini_set('max_execution_time', 0);
+        @ignore_user_abort(true);
+        $tempPath = session('latest_downloaded_update_zip');
+        if (!$tempPath || !File::exists($tempPath)) {
+            // Fallback to legacy path
+            $tempPath = storage_path('app/temp_update.zip');
+        }
+        
+        if (!File::exists($tempPath)) {
+            throw new \Exception("No se encontró el archivo temporal de actualización (" . basename($tempPath) . ").");
+        }
+        
+        $zip = new ZipArchive;
+        
+        if ($zip->open($tempPath) === TRUE) {
+            $extractPath = storage_path('app/temp_extract');
+            File::makeDirectory($extractPath, 0755, true, true);
+            
+            $zip->extractTo($extractPath);
+            $zip->close();
+
+            $files = File::directories($extractPath);
+            if (count($files) > 0) {
+                $source = $files[0];
+                
+                // 1. Detener servicios de Windows para liberar los archivos
+                $services = ['JSPOS_WhatsApp_API', 'JSPOS_Queue_Worker', 'JSPOS_Scheduler'];
+                $nssmPath = base_path('nssm/nssm.exe');
+                if (File::exists($nssmPath)) {
+                    foreach ($services as $service) {
+                        try {
+                            @shell_exec('"' . $nssmPath . '" stop ' . $service);
+                            Log::info("Updater: Deteniendo servicio de Windows: {$service}");
+                        } catch (\Exception $e) {
+                            Log::warning("Updater: No se pudo detener el servicio {$service} antes de copiar: " . $e->getMessage());
+                        }
+                    }
+                    // Esperar 1 segundo para dar tiempo a liberar los archivos
+                    sleep(1);
+                }
+
+                // 2. Copiar archivos del lote .bat primero
+                $batFiles = ['instalar_servicios.bat', 'desinstalar-servicio.bat', 'backup.bat', 'backup_cliente.bat'];
+                foreach ($batFiles as $batFile) {
+                    $srcFile = $source . '/' . $batFile;
+                    $dstFile = base_path($batFile);
+                    if (File::exists($srcFile)) {
+                        try {
+                            if (File::exists($dstFile)) {
+                                @chmod($dstFile, 0777); // Try to remove read-only or locks
+                            }
+                            File::copy($srcFile, $dstFile);
+                            Log::info("Updater: Force updated batch file {$batFile}");
+                        } catch (\Exception $e) {
+                            Log::error("Updater: Failed to update batch file {$batFile}: " . $e->getMessage());
+                        }
+                    }
+                }
+
+                // 3. Copiar el resto del proyecto rastreando fallos
+                $failedFiles = [];
+                $this->copyDirectoryWithTracking($source, base_path(), $failedFiles);
+
+                // 4. Levantar los servicios de Windows de nuevo
+                if (File::exists($nssmPath)) {
+                    foreach ($services as $service) {
+                        try {
+                            @shell_exec('"' . $nssmPath . '" start ' . $service);
+                            Log::info("Updater: Iniciando servicio de Windows: {$service}");
+                        } catch (\Exception $e) {
+                            Log::warning("Updater: No se pudo iniciar el servicio {$service} después de copiar: " . $e->getMessage());
+                        }
+                    }
+                }
+
+                // 5. Si hubo fallos de copia, lanzar error
+                if (!empty($failedFiles)) {
+                    $fileList = implode(', ', $failedFiles);
+                    throw new \Exception("La actualización se completó parcialmente. Algunos archivos no pudieron ser sobrescritos porque están bloqueados o en uso por el sistema. Por favor detenga manualmente los servicios en la máquina del cliente e intente de nuevo. Archivos fallidos: " . $fileList);
+                }
+            }
+
+            // Explicitly update version.txt
+            if ($newVersion) {
+                File::put(base_path('version.txt'), $newVersion);
+            }
+
+            // Immediately clear route and bootstrap cache so fresh routes and classes are loaded
+            self::safeClearBootstrapCache();
+
+            // Auto-run DB migrations & seeders automatically during installation
+            try {
+                $this->runMigrations();
+            } catch (\Exception $e) {
+                Log::error("Updater: Automatic migration during install failed: " . $e->getMessage());
+            }
+
+            // Auto-configurar o actualizar tarea programada de Windows para respaldos automáticos en clientes existentes
+            if (PHP_OS_FAMILY === 'Windows') {
+                try {
+                    $batPath = base_path('backup_cliente.bat');
+                    if (File::exists($batPath)) {
+                        $taskAction = "cmd.exe /c \"{$batPath}\" --scheduled";
+                        @shell_exec("schtasks /create /tn \"JSPOS_AutoBackup\" /tr \"{$taskAction}\" /sc daily /st 20:00 /f 2>nul");
+                        @shell_exec("schtasks /create /tn \"JSPOS_AutoBackup_Startup\" /tr \"{$taskAction}\" /sc onlogon /f 2>nul");
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("Updater: No se pudo registrar la tarea programada de respaldo: " . $e->getMessage());
+                }
+            }
+
+            File::deleteDirectory($extractPath);
+            File::delete($tempPath);
+            
+            // Clean session
+            session()->forget('latest_downloaded_update_zip');
+            
+            return true;
+        } else {
+            throw new \Exception("Failed to unzip update.");
+        }
+    }
+
+    /**
+     * Copia un directorio rastreando y recolectando los archivos que fallen.
+     */
+    protected function copyDirectoryWithTracking($source, $destination, &$failedFiles = [])
+    {
+        $source = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $source);
+        $destination = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $destination);
+
+        if (!is_dir($source)) {
+            return;
+        }
+
+        if (!is_dir($destination)) {
+            @mkdir($destination, 0755, true);
+        }
+
+        try {
+            $items = new \FilesystemIterator($source, \FilesystemIterator::SKIP_DOTS);
+        } catch (\Throwable $e) {
+            Log::warning("Updater: Cannot iterate directory {$source}: " . $e->getMessage());
+            return;
+        }
+
+        foreach ($items as $item) {
+            $target = $destination . DIRECTORY_SEPARATOR . $item->getFilename();
+
+            if ($item->isDir()) {
+                $this->copyDirectoryWithTracking($item->getPathname(), $target, $failedFiles);
+            } else {
+                try {
+                    // Intentar quitar atributos de solo lectura si existe
+                    if (file_exists($target)) {
+                        @chmod($target, 0777);
+                    }
+                    // Copiar y registrar si falla
+                    if (!@copy($item->getPathname(), $target)) {
+                        $failedFiles[] = str_replace(base_path() . DIRECTORY_SEPARATOR, '', $target);
+                    }
+                } catch (\Throwable $e) {
+                    $failedFiles[] = str_replace(base_path() . DIRECTORY_SEPARATOR, '', $target) . " (" . $e->getMessage() . ")";
+                }
+            }
+        }
+    }
+
+    public function runMigrations()
+    {
+        @set_time_limit(0);
+        @ini_set('max_execution_time', 0);
+        Artisan::call('migrate', ['--force' => true]);
+        // Also run permission seeder to ensure new features are accessible
+        Artisan::call('db:seed', ['--class' => 'PermissionSeeder', '--force' => true]);
+        Artisan::call('db:seed', ['--class' => 'RoleSeeder', '--force' => true]);
+        Artisan::call('db:seed', ['--class' => 'SopladosProductionTargetSeeder', '--force' => true]);
+        Artisan::call('db:seed', ['--class' => 'SopladosSecondQualityLinkerSeeder', '--force' => true]);
+
+        // Auto-heal / synchronize default warehouse product stock
+        try {
+            Artisan::call('stock:sync-default-warehouse');
+        } catch (\Throwable $th) {
+            Log::warning("Updater: Automatic stock synchronization failed: " . $th->getMessage());
+        }
+
+        // Auto-heal / normalize names in database to full UPPERCASE (Users, Customers, Suppliers, Warehouses, Products)
+        try {
+            Artisan::call('names:normalize');
+        } catch (\Throwable $th) {
+            Log::warning("Updater: Automatic names normalization failed: " . $th->getMessage());
+        }
+
+        // Self-healing Storage Link (Windows Junction Point & Unix Symlink)
+        try {
+            $publicStorage = public_path('storage');
+            $targetStorage = storage_path('app/public');
+
+            if (!File::exists($targetStorage)) {
+                File::makeDirectory($targetStorage, 0755, true, true);
+            }
+
+            $needRecreate = false;
+            if (!file_exists($publicStorage)) {
+                $needRecreate = true;
+            } elseif (is_link($publicStorage)) {
+                $linkTarget = @readlink($publicStorage);
+                if (!$linkTarget || !file_exists($linkTarget)) {
+                    $needRecreate = true;
+                }
+            } elseif (is_dir($publicStorage)) {
+                $files = @scandir($publicStorage);
+                $files = is_array($files) ? array_diff($files, ['.', '..']) : [];
+                if (empty($files)) {
+                    $needRecreate = true;
+                }
+            }
+
+            if ($needRecreate) {
+                if (str_starts_with(PHP_OS, 'WIN')) {
+                    @exec('cmd /c "rmdir /S /Q "' . $publicStorage . '""');
+                    @exec('cmd /c "del /F /Q "' . $publicStorage . '""');
+                    @exec('cmd /c "mklink /J "' . $publicStorage . '" "' . $targetStorage . '""');
+                } else {
+                    @unlink($publicStorage);
+                    @symlink($targetStorage, $publicStorage);
+                }
+                Log::info("Updater: Storage link automatically verified and created.");
+            }
+        } catch (\Throwable $th) {
+            Log::warning("Updater: Automatic storage link verification failed: " . $th->getMessage());
+        }
+
+        // Fix: Manual repair for warehouse_id in order_details if they are null
+        \App\Models\OrderDetail::whereNull('warehouse_id')->update(['warehouse_id' => 1]);
+
+        // Fix: Create personal_access_tokens table if it doesn't exist (Required for Sanctum API)
+        if (!\Illuminate\Support\Facades\Schema::hasTable('personal_access_tokens')) {
+            \Illuminate\Support\Facades\Schema::create('personal_access_tokens', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->morphs('tokenable');
+                $table->string('name');
+                $table->string('token', 64)->unique();
+                $table->text('abilities')->nullable();
+                $table->timestamp('last_used_at')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        // Fix: Add sent_at to email_messages if missing (seen in logs)
+        if (\Illuminate\Support\Facades\Schema::hasTable('email_messages')) {
+            if (!\Illuminate\Support\Facades\Schema::hasColumn('email_messages', 'sent_at')) {
+                \Illuminate\Support\Facades\Schema::table('email_messages', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->timestamp('sent_at')->nullable()->after('status');
+                });
+            }
+        }
+
+        // Fix: Ensure usdt_record_id exists in sale_payment_details and payments
+        if (\Illuminate\Support\Facades\Schema::hasTable('sale_payment_details')) {
+            if (!\Illuminate\Support\Facades\Schema::hasColumn('sale_payment_details', 'usdt_record_id')) {
+                \Illuminate\Support\Facades\Schema::table('sale_payment_details', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->unsignedBigInteger('usdt_record_id')->nullable()->after('zelle_record_id');
+                });
+            }
+        }
+        if (\Illuminate\Support\Facades\Schema::hasTable('payments')) {
+            if (!\Illuminate\Support\Facades\Schema::hasColumn('payments', 'usdt_record_id')) {
+                \Illuminate\Support\Facades\Schema::table('payments', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->unsignedBigInteger('usdt_record_id')->nullable()->after('zelle_record_id');
+                });
+            }
+        }
+
+        // Fix: Ensure is_shared_terminal on users and terminal_operators table
+        if (\Illuminate\Support\Facades\Schema::hasTable('users')) {
+            if (!\Illuminate\Support\Facades\Schema::hasColumn('users', 'is_shared_terminal')) {
+                \Illuminate\Support\Facades\Schema::table('users', function (\Illuminate\Database\Schema\Blueprint $table) {
+                    $table->boolean('is_shared_terminal')->default(false)->after('status');
+                });
+            }
+        }
+        if (!\Illuminate\Support\Facades\Schema::hasTable('terminal_operators')) {
+            \Illuminate\Support\Facades\Schema::create('terminal_operators', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->foreignId('terminal_id')->constrained('users')->onDelete('cascade');
+                $table->foreignId('operator_id')->constrained('users')->onDelete('cascade');
+                $table->timestamps();
+                $table->unique(['terminal_id', 'operator_id']);
+            });
+        }
+
+        // Fix: Auto-heal / backfill invoice_number for older sales and calibrate sequence
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('sales') && \Illuminate\Support\Facades\Schema::hasColumn('sales', 'invoice_number')) {
+                \Illuminate\Support\Facades\DB::table('sales')
+                    ->whereNull('invoice_number')
+                    ->orWhere('invoice_number', '')
+                    ->update([
+                        'invoice_number' => \Illuminate\Support\Facades\DB::raw("CONCAT('F', LPAD(id, 8, '0'))")
+                    ]);
+
+                $config = \App\Models\Configuration::first();
+                if ($config && \Illuminate\Support\Facades\Schema::hasColumn('configurations', 'invoice_sequence')) {
+                    $lastSaleWithInvoice = \App\Models\Sale::whereNotNull('invoice_number')
+                        ->where('invoice_number', '!=', '')
+                        ->orderBy('id', 'desc')
+                        ->first();
+                    if ($lastSaleWithInvoice) {
+                        $extractedNum = (int) preg_replace('/[^0-9]/', '', $lastSaleWithInvoice->invoice_number);
+                        if ($extractedNum > ($config->invoice_sequence ?? 0)) {
+                            $config->invoice_sequence = $extractedNum;
+                            $config->save();
+                            Log::info("Updater: invoice_sequence auto-calibrated to {$extractedNum}");
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $th) {
+            Log::warning("Updater: Automatic invoice_number / sequence calibration failed: " . $th->getMessage());
+        }
+
+        // Fix: Auto-heal / backfill seller_id for historical sales
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('sales') && \Illuminate\Support\Facades\Schema::hasColumn('sales', 'seller_id')) {
+                if (\Illuminate\Support\Facades\Schema::hasTable('customers') && \Illuminate\Support\Facades\Schema::hasColumn('customers', 'seller_id')) {
+                    \Illuminate\Support\Facades\DB::table('sales')
+                        ->join('customers', 'sales.customer_id', '=', 'customers.id')
+                        ->whereNull('sales.seller_id')
+                        ->whereNotNull('customers.seller_id')
+                        ->update([
+                            'sales.seller_id' => \Illuminate\Support\Facades\DB::raw('customers.seller_id')
+                        ]);
+                }
+
+                $oficinaId = \Illuminate\Support\Facades\DB::table('users')->where('name', 'OFICINA')->value('id');
+                if (!$oficinaId) {
+                    $oficinaId = \Illuminate\Support\Facades\DB::table('users')->orderBy('id', 'asc')->value('id');
+                }
+                if ($oficinaId) {
+                    \Illuminate\Support\Facades\DB::table('sales')
+                        ->whereNull('seller_id')
+                        ->update(['seller_id' => $oficinaId]);
+                }
+            }
+        } catch (\Throwable $th) {
+            Log::warning("Updater: Automatic seller_id backfill failed: " . $th->getMessage());
+        }
+
+        // Create the AutoMigrate flag file so AutoMigrate middleware recognizes completion for this version
+        $versionFile = base_path('version.txt');
+        if (File::exists($versionFile)) {
+            $currentVersion = trim(File::get($versionFile));
+            $flagFile = storage_path('framework/migrated_' . str_replace('.', '_', $currentVersion) . '.log');
+            File::put($flagFile, 'Migrated on: ' . now()->toDateTimeString());
+        }
+
+        self::safeClearBootstrapCache();
+
+        return true;
+    }
+
+    public function cleanup()
+    {
+        self::safeClearBootstrapCache();
+        \Illuminate\Support\Facades\Cache::forget('system_update_available');
+        return true;
+    }
+
+    public static function safeClearBootstrapCache()
+    {
+        try {
+            $cacheFiles = [
+                base_path('bootstrap/cache/packages.php'),
+                base_path('bootstrap/cache/services.php'),
+                base_path('bootstrap/cache/config.php'),
+                base_path('bootstrap/cache/routes-v7.php'),
+                base_path('bootstrap/cache/events.php'),
+            ];
+            foreach ($cacheFiles as $f) {
+                if (File::exists($f)) {
+                    @unlink($f);
+                }
+            }
+            // Clean any leftover .tmp files
+            $tmpFiles = glob(base_path('bootstrap/cache/*.tmp'));
+            if ($tmpFiles) {
+                foreach ($tmpFiles as $tmp) {
+                    @unlink($tmp);
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        try {
+            Artisan::call('route:clear');
+            Artisan::call('view:clear');
+            Artisan::call('optimize:clear');
+        } catch (\Throwable $e) {
+            Log::warning("Updater: optimize:clear warning: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Genera una copia de seguridad (rollback point) de los archivos y base de datos.
+     */
+    public function createRollbackBackup($currentVersion, array $directories = null, array $files = null)
+    {
+        @set_time_limit(0);
+        @ini_set('max_execution_time', 0);
+        $backupDir = storage_path('backups/antes_de_v' . $currentVersion);
+        if (!File::exists($backupDir)) {
+            File::makeDirectory($backupDir, 0755, true, true);
+        }
+
+        // 1. Respaldar base de datos
+        $dbBackupPath = $backupDir . '/database_backup.sql';
+        $this->exportDatabaseSql($dbBackupPath);
+
+        // 2. Respaldar archivos
+        $filesBackupPath = $backupDir . '/files_backup.zip';
+        $directories = $directories ?? ['app', 'bootstrap', 'config', 'database', 'public', 'resources', 'routes', 'lang'];
+        $files = $files ?? ['composer.json', 'composer.lock', 'version.txt', 'artisan'];
+        
+        $this->zipDirectories($directories, $files, $filesBackupPath);
+
+        // 3. Limitar automáticamente a los últimos 3 backups para evitar llenar disco
+        $this->pruneOldBackups();
+
+        return true;
+    }
+
+    /**
+     * Prunea backups viejos manteniendo solo los 3 más recientes.
+     */
+    protected function pruneOldBackups()
+    {
+        $available = $this->getAvailableRollbacks();
+        if (count($available) > 3) {
+            // Sort by date ascending (oldest first)
+            usort($available, function($a, $b) {
+                return $a['timestamp'] <=> $b['timestamp'];
+            });
+
+            // Delete oldest until we have 3
+            while (count($available) > 3) {
+                $oldest = array_shift($available);
+                $this->deleteRollbackBackup($oldest['folder']);
+            }
+        }
+    }
+
+    /**
+     * Exporta la base de datos de forma nativa en PHP para máxima compatibilidad.
+     */
+    public function exportDatabaseSql($filePath)
+    {
+        $tablesResult = \Illuminate\Support\Facades\DB::select('SHOW TABLES');
+        if (empty($tablesResult)) {
+            throw new \Exception("No tables found in database.");
+        }
+        
+        $keys = array_keys((array)$tablesResult[0]);
+        $dbNameKey = $keys[0];
+
+        $tables = [];
+        foreach ($tablesResult as $row) {
+            $tables[] = $row->{$dbNameKey};
+        }
+
+        $fileHandle = fopen($filePath, 'w');
+        if (!$fileHandle) {
+            throw new \Exception("Cannot open backup file for writing: " . $filePath);
+        }
+
+        fwrite($fileHandle, "-- JSPOS Database Backup\n");
+        fwrite($fileHandle, "-- Generated: " . now()->toIso8601String() . "\n\n");
+        fwrite($fileHandle, "SET FOREIGN_KEY_CHECKS=0;\n\n");
+
+        foreach ($tables as $table) {
+            // Structure
+            $createTable = \Illuminate\Support\Facades\DB::select("SHOW CREATE TABLE `{$table}`");
+            $createTableSql = (array)$createTable[0];
+            fwrite($fileHandle, "DROP TABLE IF EXISTS `{$table}`;\n");
+            fwrite($fileHandle, $createTableSql['Create Table'] . ";\n\n");
+
+            // Data using offset pagination for memory efficiency
+            $count = \Illuminate\Support\Facades\DB::table($table)->count();
+            $chunkSize = 1000;
+
+            for ($offset = 0; $offset < $count; $offset += $chunkSize) {
+                $rows = \Illuminate\Support\Facades\DB::table($table)->offset($offset)->limit($chunkSize)->get();
+                foreach ($rows as $row) {
+                    $rowArray = (array)$row;
+                    $keysList = array_map(function($k) { return "`{$k}`"; }, array_keys($rowArray));
+                    $valuesList = array_map(function($value) {
+                        if ($value === null) return "NULL";
+                        return "'" . addslashes($value) . "'";
+                    }, array_values($rowArray));
+
+                    fwrite($fileHandle, "INSERT INTO `{$table}` (" . implode(', ', $keysList) . ") VALUES (" . implode(', ', $valuesList) . ");\n");
+                }
+            }
+            fwrite($fileHandle, "\n");
+        }
+
+        fwrite($fileHandle, "SET FOREIGN_KEY_CHECKS=1;\n");
+        fclose($fileHandle);
+    }
+
+    /**
+     * Comprime recursivamente directorios y archivos específicos.
+     */
+    public function zipDirectories(array $directories, array $files, $outZipPath)
+    {
+        $zip = new ZipArchive();
+        if ($zip->open($outZipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            throw new \Exception("No se pudo crear el archivo ZIP para rollback.");
+        }
+
+        foreach ($directories as $dir) {
+            $realPath = base_path($dir);
+            if (!File::exists($realPath)) continue;
+
+            $filesInDir = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($realPath),
+                \RecursiveIteratorIterator::LEAVES_ONLY
+            );
+
+            foreach ($filesInDir as $file) {
+                $filePath = $file->getRealPath();
+                if ($filePath === false) {
+                    continue;
+                }
+
+                // Skip directories (including junction points) and symbolic links
+                if (is_dir($filePath) || is_link($filePath) || $file->isLink()) {
+                    continue;
+                }
+
+                if (!$file->isDir()) {
+                    $pathname = $file->getPathname();
+                    
+                    // Exclude storage symlinks in public or cache folders (check both realpath and pathname for Windows junctions)
+                    $isExcludeFolder = str_contains($filePath, 'public\\storage') || str_contains($filePath, 'public/storage') ||
+                                       str_contains($pathname, 'public\\storage') || str_contains($pathname, 'public/storage') ||
+                                       str_contains($filePath, 'bootstrap\\cache') || str_contains($filePath, 'bootstrap/cache') ||
+                                       str_contains($pathname, 'bootstrap\\cache') || str_contains($pathname, 'bootstrap/cache');
+                                       
+                    // Exclude large non-code media and installers to optimize update backup size and speed
+                    $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+                    $isExcludeExtension = in_array($extension, [
+                        'apk', 'mp4', 'zip', 'rar', 'tar', 'gz',
+                        'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico',
+                        'map', 'pdf', 'mp3', 'wav', 'ogg', 'wma', 'aac'
+                    ]);
+
+                    if ($isExcludeFolder || $isExcludeExtension) {
+                        continue;
+                    }
+                    
+                    $relativePath = $dir . '/' . substr($filePath, strlen($realPath) + 1);
+                    $zip->addFile($filePath, $relativePath);
+                }
+            }
+        }
+
+        foreach ($files as $file) {
+            $realPath = base_path($file);
+            if (File::exists($realPath)) {
+                $zip->addFile($realPath, $file);
+            }
+        }
+
+        $zip->close();
+    }
+
+    /**
+     * Retorna la lista de rollbacks disponibles.
+     */
+    public function getAvailableRollbacks()
+    {
+        $backupsDir = storage_path('backups');
+        if (!File::exists($backupsDir)) {
+            return [];
+        }
+
+        $directories = File::directories($backupsDir);
+        $rollbacks = [];
+
+        foreach ($directories as $dir) {
+            $folderName = basename($dir);
+            if (str_starts_with($folderName, 'antes_de_v')) {
+                $version = str_replace('antes_de_v', '', $folderName);
+                
+                $sqlPath = $dir . '/database_backup.sql';
+                $zipPath = $dir . '/files_backup.zip';
+                
+                if (File::exists($sqlPath) && File::exists($zipPath)) {
+                    $timestamp = File::lastModified($dir);
+                    $date = date('Y-m-d H:i:s', $timestamp);
+                    $size = File::size($sqlPath) + File::size($zipPath);
+                    $sizeFormatted = number_format($size / (1024 * 1024), 2) . ' MB';
+
+                    $rollbacks[] = [
+                        'folder' => $folderName,
+                        'version' => $version,
+                        'date' => $date,
+                        'timestamp' => $timestamp,
+                        'size' => $sizeFormatted,
+                    ];
+                }
+            }
+        }
+
+        return $rollbacks;
+    }
+
+    /**
+     * Elimina una carpeta de rollback.
+     */
+    public function deleteRollbackBackup($backupFolder)
+    {
+        $backupDir = storage_path('backups/' . $backupFolder);
+        if (File::exists($backupDir)) {
+            File::deleteDirectory($backupDir);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Realiza la restauración a partir de un punto de rollback.
+     */
+    public function restoreFromBackup($backupFolder)
+    {
+        @set_time_limit(0);
+        @ini_set('max_execution_time', 0);
+        $backupDir = storage_path('backups/' . $backupFolder);
+        if (!File::exists($backupDir)) {
+            throw new \Exception("Directorio de restauración no encontrado.");
+        }
+
+        $zipPath = $backupDir . '/files_backup.zip';
+        $sqlPath = $backupDir . '/database_backup.sql';
+
+        if (!File::exists($zipPath) || !File::exists($sqlPath)) {
+            throw new \Exception("Archivos de copia de seguridad incompletos en el punto de restauración.");
+        }
+
+        // 1. Restaurar archivos
+        $zip = new ZipArchive();
+        if ($zip->open($zipPath) === true) {
+            $zip->extractTo(base_path());
+            $zip->close();
+        } else {
+            throw new \Exception("No se pudo descompilar el ZIP de archivos.");
+        }
+
+        // 2. Restaurar base de datos
+        $this->importDatabaseSql($sqlPath);
+
+        // 3. Limpiar caches
+        $this->cleanup();
+
+        return true;
+    }
+
+    /**
+     * Importa un archivo SQL ejecutando las sentencias individualmente.
+     *
+     * Nota: DB::unprepared() con un dump multi-sentencia puede fallar en algunos
+     * drivers MySQL porque no todos soportan multi-statement por defecto.
+     * Dividimos el SQL en sentencias individuales y las ejecutamos una a una
+     * para mayor compatibilidad y control de errores.
+     */
+    public function importDatabaseSql($filePath)
+    {
+        if (!File::exists($filePath)) {
+            throw new \Exception("Archivo SQL no encontrado.");
+        }
+
+        $sql = File::get($filePath);
+
+        // Primero desactivar FKs explícitamente (independiente del contenido del dump)
+        \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+
+        // Dividir en sentencias individuales por punto y coma al final de línea
+        // Ignorar comentarios (líneas que empiezan con --)
+        $lines = explode("\n", $sql);
+        $currentStatement = '';
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            // Ignorar líneas de comentario
+            if (str_starts_with($trimmed, '--') || $trimmed === '') {
+                continue;
+            }
+
+            $currentStatement .= $line . "\n";
+
+            // Cuando la línea termina en ; es el fin de la sentencia
+            if (str_ends_with($trimmed, ';')) {
+                $stmt = trim($currentStatement);
+                if (!empty($stmt) && $stmt !== ';') {
+                    // Omitir las sentencias SET FOREIGN_KEY_CHECKS ya que las manejamos manualmente
+                    if (!preg_match('/^SET\s+FOREIGN_KEY_CHECKS\s*=/i', $stmt)) {
+                        \Illuminate\Support\Facades\DB::unprepared($stmt);
+                    }
+                }
+                $currentStatement = '';
+            }
+        }
+
+        // Ejecutar cualquier sentencia restante sin punto y coma
+        $remaining = trim($currentStatement);
+        if (!empty($remaining)) {
+            \Illuminate\Support\Facades\DB::unprepared($remaining);
+        }
+
+        // Reactivar claves foráneas
+        \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+    }
+
+    /**
+     * Retorna las últimas N líneas del archivo laravel.log de forma eficiente.
+     */
+    public function getLatestLogLines($lines = 150)
+    {
+        $logPath = storage_path('logs/laravel.log');
+        if (!File::exists($logPath)) {
+            return "No hay registros de errores disponibles.";
+        }
+
+        $file = @fopen($logPath, 'r');
+        if (!$file) {
+            return "No se pudo abrir el archivo de registros.";
+        }
+
+        $chunkSize = 4096;
+        fseek($file, 0, SEEK_END);
+        $fileSize = ftell($file);
+        $pos = $fileSize;
+
+        $output = '';
+        $lineCount = 0;
+
+        // Read backwards in chunks until we have enough lines or reach start of file
+        while ($pos > 0 && $lineCount <= $lines) {
+            $readSize = min($chunkSize, $pos);
+            $pos -= $readSize;
+            fseek($file, $pos);
+            $chunk = fread($file, $readSize);
+            
+            $output = $chunk . $output;
+            $lineCount = substr_count($output, "\n");
+        }
+
+        fclose($file);
+
+        // Split into lines
+        $logLines = explode("\n", $output);
+        
+        // If the last element is empty due to a trailing newline, remove it
+        if (end($logLines) === '') {
+            array_pop($logLines);
+        }
+
+        // Return only the requested number of lines
+        $slice = array_slice($logLines, -$lines);
+        return implode("\n", $slice);
+    }
+
+    /**
+     * Limpia el archivo laravel.log vaciando su contenido.
+     */
+    public function clearLog()
+    {
+        $logPath = storage_path('logs/laravel.log');
+        if (File::exists($logPath)) {
+            File::put($logPath, '');
+            clearstatcache(true, $logPath);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Envía una notificación de correo al completar una actualización.
+     */
+    public function sendUpdateNotificationEmail($newVersion, $oldVersion)
+    {
+        try {
+            $recipients = config('backup.notifications.mail.to');
+            if (empty($recipients)) {
+                $recipients = array_filter(array_map('trim', explode(',', env('BACKUP_MAIL_TO', 'jhosagid7@gmail.com'))));
+            }
+            if (empty($recipients)) {
+                return;
+            }
+
+            $subject = "🟢 Sistema JSPOS Actualizado a v{$newVersion}";
+            
+            // Get release notes if available
+            $releaseNotes = '';
+            $changelogPath = base_path('CHANGELOG.md');
+            if (file_exists($changelogPath)) {
+                $content = file_get_contents($changelogPath);
+                $lines = explode("\n", $content);
+                $notes = [];
+                $capturing = false;
+                $searchVersion = str_replace('v', '', $newVersion);
+                $startPattern = "/^## \[" . preg_quote($searchVersion, '/') . "\]/";
+
+                foreach ($lines as $line) {
+                    if (preg_match($startPattern, $line)) {
+                        $capturing = true;
+                        continue;
+                    }
+                    if ($capturing && preg_match('/^## \[/', $line)) {
+                        break;
+                    }
+                    if ($capturing) {
+                        $notes[] = $line;
+                    }
+                }
+                $releaseNotes = trim(implode("\n", $notes));
+            }
+
+            $body = "Hola,\n\nEl sistema JSPOS ha sido actualizado exitosamente de la versión v{$oldVersion} a la versión v{$newVersion}.\n\n";
+            if (!empty($releaseNotes)) {
+                $body .= "📋 NOTAS DE LA VERSIÓN:\n--------------------------------------------------\n{$releaseNotes}\n\n";
+            }
+            $body .= "Se ha creado automáticamente un punto de restauración antes de realizar la actualización en storage/backups/antes_de_v{$oldVersion}.\n\nAtentamente,\nSistema de Actualización Automatizado.";
+
+            Mail::to($recipients)->queue(new \App\Mail\GenericNotificationMail(
+                $subject,
+                $body
+            ));
+            Log::info("Update notification email sent to: " . implode(', ', $recipients));
+        } catch (\Exception $e) {
+            Log::error("Failed to send update notification email: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Obtiene la ruta al archivo laravel.log.
+     */
+    public function getLogPath()
+    {
+        return storage_path('logs/laravel.log');
+    }
+}
