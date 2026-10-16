@@ -42,7 +42,7 @@ class OrderTerminal extends Component
                 if ($activeOrder) {
                     $this->orderId = $activeOrder->id;
                 } else {
-                    $waiter = auth()->user() ?? \App\Models\User::where('email', 'mesonero1@jsfood.dev')->first() ?? \App\Models\User::first();
+                    $waiter = $this->resolveWaiter();
                     $newOrder = Order::create([
                         'table_id' => $table->id,
                         'area_id' => $table->area_id,
@@ -56,7 +56,7 @@ class OrderTerminal extends Component
             }
         } else {
             // Orden rápida de mostrador / para llevar
-            $waiter = auth()->user() ?? \App\Models\User::where('email', 'mesonero1@jsfood.dev')->first() ?? \App\Models\User::first();
+            $waiter = $this->resolveWaiter();
             $newOrder = Order::create([
                 'user_id' => $waiter->id,
                 'account_label' => 'Para Llevar / Mostrador',
@@ -197,6 +197,22 @@ class OrderTerminal extends Component
         }
 
         $this->dispatch('notify', message: "Pre-cuenta impresa exitosamente 🧾", type: 'success');
+    }
+
+    protected function resolveWaiter(): \App\Models\User
+    {
+        if (auth()->check()) {
+            return auth()->user();
+        }
+
+        return \App\Models\User::where('email', 'mesonero1@jsfood.dev')->first()
+            ?? \App\Models\User::first()
+            ?? \App\Models\User::create([
+                'name' => 'Mesonero General',
+                'email' => 'mesonero1@jsfood.dev',
+                'password' => bcrypt('password123'),
+                'role' => 'waiter',
+            ]);
     }
 
     public function render()
