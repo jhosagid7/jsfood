@@ -154,5 +154,52 @@ class PosDiscountAndCancellationTest extends TestCase
 
         $this->assertEquals('paid', $order->fresh()->status);
     }
+
+    public function test_cashier_selects_order_with_bank_payment()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $bank = \App\Models\Bank::create([
+            'name' => 'Banesco Pago Movil',
+            'type' => 'pago_movil',
+            'currency_code' => 'VED',
+            'state' => true,
+        ]);
+
+        $order = Order::create([
+            'user_id' => $user->id,
+            'order_number' => 'ORD-BANK1',
+            'service_type' => 'dine_in',
+            'status' => 'pending',
+            'subtotal_usd' => 30.00,
+            'total_usd' => 30.00,
+        ]);
+
+        $product = \App\Models\Product::first();
+        $order->items()->create([
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'unit_price_usd' => 30.00,
+            'subtotal_usd' => 30.00,
+        ]);
+
+        \App\Models\Payment::create([
+            'order_id' => $order->id,
+            'user_id' => $user->id,
+            'bank_id' => $bank->id,
+            'payment_method' => 'mobile_pay',
+            'currency_code' => 'VED',
+            'exchange_rate' => 60.00,
+            'amount_currency' => 600.00,
+            'amount_usd' => 10.00,
+            'change_usd' => 0.00,
+            'reference' => '123456',
+        ]);
+
+        Livewire::test(CashierRegister::class)
+            ->call('selectOrder', $order->id)
+            ->assertSet('selectedOrderId', $order->id);
+    }
 }
 
