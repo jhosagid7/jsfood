@@ -88,6 +88,14 @@ class LivewireFlowTest extends TestCase
         $this->assertEquals('in_kitchen', $order->status);
     }
 
+    public function test_order_terminal_renders_cleanly_without_table_or_order(): void
+    {
+        Livewire::test(OrderTerminal::class)
+            ->assertStatus(200)
+            ->assertSee('Para Llevar / Mostrador')
+            ->assertSee('Comanda Activa');
+    }
+
     /**
      * Test 3: Pantalla de Cocina KDS (avanzar pedido a listo para servir).
      */

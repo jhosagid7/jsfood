@@ -11,23 +11,24 @@
             <div>
                 <div class="flex items-center space-x-2">
                     <h2 class="text-lg sm:text-xl font-black text-white">
-                        {{ $currentOrder->diningTable ? $currentOrder->diningTable->name : 'Para Llevar / Mostrador' }}
+                        {{ $currentOrder?->diningTable ? $currentOrder->diningTable->name : ($tableId ? 'Mesa' : 'Para Llevar / Mostrador') }}
                     </h2>
                     <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                        {{ $currentOrder->account_label ?? 'Cuenta Principal' }}
+                        {{ $currentOrder?->account_label ?? 'Nueva Comanda' }}
                     </span>
                 </div>
                 <div class="text-xs text-slate-400 font-medium">
-                    <span>Orden #{{ $currentOrder->order_number ?? '' }}</span>
+                    <span>Orden #{{ $currentOrder?->order_number ?? 'Borrador' }}</span>
                     <span class="mx-1">•</span>
-                    <span>Cliente: <strong class="text-slate-200">{{ $currentOrder->customer->name ?? 'General' }}</strong></span>
+                    <span>Cliente: <strong class="text-slate-200">{{ $currentOrder?->customer?->name ?? 'General' }}</strong></span>
                 </div>
             </div>
         </div>
 
         <!-- Estado de la Orden -->
         @php
-            $statusBadge = match($currentOrder->status ?? 'pending') {
+            $orderStatus = $currentOrder?->status ?? 'pending';
+            $statusBadge = match($orderStatus) {
                 'pending' => 'bg-slate-800 text-slate-300 border-slate-700',
                 'in_kitchen' => 'bg-orange-500/20 text-orange-400 border-orange-500/40 animate-pulse',
                 'ready' => 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 ring-2 ring-emerald-500/30',
@@ -35,13 +36,13 @@
                 'bill_requested' => 'bg-red-500/20 text-red-400 border-red-500/40',
                 default => 'bg-slate-800 text-slate-300 border-slate-700',
             };
-            $statusText = match($currentOrder->status ?? 'pending') {
+            $statusText = match($orderStatus) {
                 'pending' => 'Borrador / Sin Enviar',
                 'in_kitchen' => 'En Cocina 🍳',
                 'ready' => '¡Listo para Servir! 🔔',
                 'served' => 'Platos Servidos 🍽️',
                 'bill_requested' => 'Pre-cuenta Solicitada 🧾',
-                default => ucfirst($currentOrder->status ?? ''),
+                default => ucfirst($orderStatus),
             };
         @endphp
         <span class="px-3 py-1 rounded-xl text-xs font-black border uppercase tracking-wider {{ $statusBadge }}">
@@ -135,13 +136,13 @@
                         <span>Comanda Activa</span>
                     </h3>
                     <span class="text-xs font-bold text-slate-400">
-                        {{ $currentOrder->items->count() ?? 0 }} productos
+                        {{ $currentOrder?->items?->count() ?? 0 }} productos
                     </span>
                 </div>
 
                 <!-- Lista de Ítems en la Comanda -->
                 <div class="flex-1 overflow-y-auto py-3 space-y-2.5 divide-y divide-slate-800/60">
-                    @forelse($currentOrder->items ?? [] as $item)
+                    @forelse($currentOrder?->items ?? [] as $item)
                         <div class="pt-2 first:pt-0 flex flex-col space-y-1" wire:key="item-row-{{ $item->id }}">
                             <div class="flex items-start justify-between">
                                 <div class="flex-1 pr-2">
@@ -201,19 +202,19 @@
                 <div class="pt-3 border-t border-slate-800 space-y-2.5">
                     <div class="flex items-center justify-between text-sm">
                         <span class="text-slate-400 font-semibold">Subtotal:</span>
-                        <span class="text-white font-bold">${{ number_format($currentOrder->subtotal_usd ?? 0, 2) }}</span>
+                        <span class="text-white font-bold">${{ number_format($currentOrder?->subtotal_usd ?? 0, 2) }}</span>
                     </div>
 
                     <!-- Fila de Descuento -->
                     <div class="flex items-center justify-between text-sm">
                         <div class="flex items-center space-x-1">
                             <span class="text-slate-400 font-semibold">Descuento:</span>
-                            @if(($currentOrder->discount_usd ?? 0) > 0)
+                            @if(($currentOrder?->discount_usd ?? 0) > 0)
                                 <button wire:click="removeDiscount" class="text-red-400 hover:text-red-300 text-xs font-bold" title="Remover descuento">✕</button>
                             @endif
                         </div>
                         <div>
-                            @if(($currentOrder->discount_usd ?? 0) > 0)
+                            @if(($currentOrder?->discount_usd ?? 0) > 0)
                                 <button wire:click="openDiscountModal" class="text-emerald-400 font-bold hover:underline">
                                     -${{ number_format($currentOrder->discount_usd, 2) }}
                                 </button>
@@ -228,7 +229,7 @@
 
                     <div class="flex items-center justify-between text-lg font-black border-t border-slate-800 pt-2">
                         <span class="text-white">TOTAL:</span>
-                        <span class="text-amber-400">${{ number_format($currentOrder->total_usd ?? 0, 2) }}</span>
+                        <span class="text-amber-400">${{ number_format($currentOrder?->total_usd ?? 0, 2) }}</span>
                     </div>
 
                     <!-- Botones de Acción de Alto Impacto -->
@@ -249,7 +250,7 @@
                             </button>
 
                             <!-- 3. Cobrar en Caja -->
-                            <a href="{{ url('/cashier?order_id=' . ($currentOrder->id ?? '')) }}"
+                            <a href="{{ url('/cashier?order_id=' . ($currentOrder?->id ?? '')) }}"
                                 class="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center space-x-1 transition-all shadow-md shadow-emerald-600/20">
                                 <span>💳</span>
                                 <span>Cobrar</span>

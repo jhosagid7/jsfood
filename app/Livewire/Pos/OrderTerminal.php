@@ -196,8 +196,16 @@ class OrderTerminal extends Component
 
     public function printPreBill()
     {
+        if (!$this->orderId) {
+            $this->dispatch('notify', message: "No hay comanda activa para pre-cuenta", type: 'warning');
+            return;
+        }
+
         $order = Order::with('items.product', 'diningTable')->find($this->orderId);
-        if (!$order || $order->items->isEmpty()) return;
+        if (!$order || $order->items->isEmpty()) {
+            $this->dispatch('notify', message: "Agrega productos a la comanda antes de pedir la pre-cuenta", type: 'warning');
+            return;
+        }
 
         $config = Configuration::first();
         $width = $config->printer_width ?? 80;
