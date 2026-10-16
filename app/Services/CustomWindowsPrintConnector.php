@@ -137,7 +137,7 @@ class CustomWindowsPrintConnector implements PrintConnector
         }
     }
 
-    public function finalize()
+    public function finalize(): void
     {
         $data = implode($this->buffer);
         $this->buffer = null;
@@ -521,9 +521,9 @@ POWERSHELL;
         return self::PLATFORM_LINUX;
     }
 
-    public function read($len) { return false; }
+    public function read(int $len): bool|string { return false; }
 
-    public function write($data)
+    public function write(string $data): void
     {
         $this->buffer[] = $data;
     }

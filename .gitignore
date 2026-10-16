@@ -17,3 +17,9 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+LPT1
+*.key
+storage/app/client_id.txt
+storage/installed
+
