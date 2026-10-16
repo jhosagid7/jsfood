@@ -41,16 +41,25 @@ class CashierRegister extends Component
     // Historial para re-impresión
     public ?int $lastPaidOrderId = null;
 
-    public function mount()
+    public function mount(?int $order_id = null)
     {
-        $orderIdParam = request()->query('order_id');
+        $orderIdParam = $order_id ?? request()->query('order_id');
         if ($orderIdParam) {
-            $this->selectOrder((int) $orderIdParam);
-        } else {
-            $firstPending = Order::whereNotIn('status', ['paid', 'cancelled'])->latest()->first();
-            if ($firstPending) {
-                $this->selectOrder($firstPending->id);
+            $order = Order::find((int) $orderIdParam);
+            if ($order && !in_array($order->status, ['paid', 'cancelled'])) {
+                $this->selectOrder((int) $orderIdParam);
+                return;
+            } elseif ($order && $order->status === 'paid') {
+                $this->lastPaidOrderId = $order->id;
             }
+        }
+
+        $firstPending = Order::whereNotIn('status', ['paid', 'cancelled'])->latest()->first();
+        if ($firstPending) {
+            $this->selectOrder($firstPending->id);
+        } else {
+            $this->selectedOrderId = null;
+            $this->appliedPayments = [];
         }
     }
 
@@ -84,29 +93,44 @@ class CashierRegister extends Component
 
     public function selectOrder(int $orderId)
     {
-        $this->selectedOrderId = $orderId;
         $order = Order::with('items.product', 'diningTable', 'customer', 'payments.bank')->find($orderId);
-        if ($order) {
-            $this->selectedCustomerId = $order->customer_id;
-            $this->discountValue = $order->discount_usd > 0 ? (float) $order->discount_usd : 0.00;
-            $this->discountType = 'fixed';
-            
-            // Cargar los abonos/pagos ya registrados en la BD para esta orden
-            $this->appliedPayments = $order->payments->map(fn($p) => [
-                'id' => $p->id,
-                'method' => $p->payment_method,
-                'bank_id' => $p->bank_id,
-                'bank_name' => $p->bank ? $p->bank->name : null,
-                'currency' => $p->currency_code,
-                'rate' => (float) $p->exchange_rate,
-                'amount_currency' => (float) $p->amount_currency,
-                'amount_usd' => (float) $p->amount_usd,
-                'reference' => $p->reference ?? '',
-                'proof_image' => $p->proof_image,
-            ])->toArray();
+        if (!$order) return;
 
-            $this->recalculateRemaining();
+        if ($order->status === 'paid') {
+            $this->lastPaidOrderId = $order->id;
+            $this->selectedOrderId = null;
+            $this->appliedPayments = [];
+            $this->dispatch('notify', message: "La orden #{$order->order_number} ya fue cobrada y está pagada.", type: 'info');
+            return;
         }
+
+        if ($order->status === 'cancelled') {
+            $this->selectedOrderId = null;
+            $this->appliedPayments = [];
+            $this->dispatch('notify', message: "La orden #{$order->order_number} está cancelada.", type: 'warning');
+            return;
+        }
+
+        $this->selectedOrderId = $orderId;
+        $this->selectedCustomerId = $order->customer_id;
+        $this->discountValue = $order->discount_usd > 0 ? (float) $order->discount_usd : 0.00;
+        $this->discountType = 'fixed';
+        
+        // Cargar los abonos/pagos ya registrados en la BD para esta orden
+        $this->appliedPayments = $order->payments->map(fn($p) => [
+            'id' => $p->id,
+            'method' => $p->payment_method,
+            'bank_id' => $p->bank_id,
+            'bank_name' => $p->bank ? $p->bank->name : null,
+            'currency' => $p->currency_code,
+            'rate' => (float) $p->exchange_rate,
+            'amount_currency' => (float) $p->amount_currency,
+            'amount_usd' => (float) $p->amount_usd,
+            'reference' => $p->reference ?? '',
+            'proof_image' => $p->proof_image,
+        ])->toArray();
+
+        $this->recalculateRemaining();
     }
 
     public function openDiscountModal()
@@ -366,7 +390,12 @@ class CashierRegister extends Component
 
         // Resetear y seleccionar siguiente orden
         $this->reset(['selectedOrderId', 'appliedPayments', 'paymentReference', 'discountValue']);
-        $this->mount();
+        $this->dispatch('clear-order-query');
+
+        $nextPending = Order::whereNotIn('status', ['paid', 'cancelled'])->latest()->first();
+        if ($nextPending) {
+            $this->selectOrder($nextPending->id);
+        }
     }
 
     public function reprintTicket(?int $orderId = null)

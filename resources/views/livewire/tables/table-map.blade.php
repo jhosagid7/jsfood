@@ -289,7 +289,15 @@
                 </div>
 
                 <!-- Pie Modal: Botón para Crear Otra Cuenta en Esta Mesa -->
-                <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
+                <div class="pt-3 border-t border-slate-800 space-y-2">
+                    @if($selectedTable->active_orders_count > 1)
+                        <button wire:click="mergeTableAccounts({{ $selectedTable->id }})"
+                            wire:confirm="¿Deseas unir todas las cuentas de esta mesa en una sola cuenta consolidada?"
+                            class="w-full py-2.5 px-4 rounded-xl bg-purple-950/70 hover:bg-purple-900 border border-purple-700/60 text-purple-200 font-bold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer">
+                            <span>🔗</span>
+                            <span>Unir Todas las Cuentas en Una Sola (Pagar Todo Junto)</span>
+                        </button>
+                    @endif
                     <button wire:click="$set('showNewAccountModal', true)" 
                         class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-sm flex items-center justify-center space-x-2 shadow-lg shadow-orange-500/20">
                         <span>➕ Abrir Otra Cuenta Independiente en Esta Mesa</span>

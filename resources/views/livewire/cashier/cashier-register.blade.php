@@ -431,4 +431,15 @@
         </div>
     @endif
 
+    @script
+    <script>
+        $wire.on('clear-order-query', () => {
+            const url = new URL(window.location);
+            url.searchParams.delete('order_id');
+            window.history.replaceState({}, '', url.pathname);
+        });
+    </script>
+    @endscript
+
 </div>
+

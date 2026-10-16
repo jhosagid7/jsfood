@@ -38,7 +38,13 @@ class OrderTerminal extends Component
         $orderIdParam = request()->query('order_id');
 
         if ($orderIdParam) {
-            $this->orderId = (int) $orderIdParam;
+            $existing = Order::find((int) $orderIdParam);
+            if ($existing && !in_array($existing->status, ['paid', 'cancelled'])) {
+                $this->orderId = $existing->id;
+                $this->tableId = $existing->table_id;
+            } else {
+                $this->orderId = null;
+            }
         } elseif ($this->tableId) {
             // Cargar la última cuenta activa de la mesa o crear una
             $table = Table::find($this->tableId);

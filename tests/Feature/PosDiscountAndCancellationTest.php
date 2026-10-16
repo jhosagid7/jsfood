@@ -201,5 +201,84 @@ class PosDiscountAndCancellationTest extends TestCase
             ->call('selectOrder', $order->id)
             ->assertSet('selectedOrderId', $order->id);
     }
+
+    public function test_paid_order_is_not_selected_in_cashier()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $order = Order::create([
+            'user_id' => $user->id,
+            'order_number' => 'ORD-PAID-TEST',
+            'service_type' => 'dine_in',
+            'status' => 'paid',
+            'subtotal_usd' => 10.00,
+            'total_usd' => 10.00,
+        ]);
+
+        Livewire::test(CashierRegister::class, ['order_id' => $order->id])
+            ->assertSet('selectedOrderId', null)
+            ->assertSet('lastPaidOrderId', $order->id);
+    }
+
+    public function test_table_map_can_merge_multiple_accounts()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $table = \App\Models\Table::first();
+        $burger = \App\Models\Product::first();
+
+        // Cuenta 1
+        $o1 = Order::create([
+            'table_id' => $table->id,
+            'user_id' => $user->id,
+            'order_number' => 'ORD-SPLIT-1',
+            'service_type' => 'dine_in',
+            'account_label' => 'Cuenta 1',
+            'status' => 'pending',
+            'subtotal_usd' => 10.00,
+            'total_usd' => 10.00,
+        ]);
+        $o1->items()->create([
+            'product_id' => $burger->id,
+            'quantity' => 1,
+            'unit_price_usd' => 10.00,
+            'subtotal_usd' => 10.00,
+        ]);
+
+        // Cuenta 2
+        $o2 = Order::create([
+            'table_id' => $table->id,
+            'user_id' => $user->id,
+            'order_number' => 'ORD-SPLIT-2',
+            'service_type' => 'dine_in',
+            'account_label' => 'Cuenta 2',
+            'status' => 'pending',
+            'subtotal_usd' => 15.00,
+            'total_usd' => 15.00,
+        ]);
+        $o2->items()->create([
+            'product_id' => $burger->id,
+            'quantity' => 1,
+            'unit_price_usd' => 15.00,
+            'subtotal_usd' => 15.00,
+        ]);
+
+        $table->syncStatus();
+        $this->assertEquals(2, $table->activeOrders()->count());
+
+        // Unificar cuentas
+        Livewire::test(TableMap::class)
+            ->call('mergeTableAccounts', $table->id)
+            ->assertDispatched('notify');
+
+        $this->assertEquals(1, $table->activeOrders()->count());
+        $mergedOrder = $table->activeOrders()->first();
+        $this->assertEquals('Cuenta Unificada', $mergedOrder->account_label);
+        $this->assertEquals(2, $mergedOrder->items()->count());
+        $this->assertEquals(25.00, $mergedOrder->total_usd);
+    }
 }
+
 

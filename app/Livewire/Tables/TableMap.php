@@ -137,6 +137,34 @@ class TableMap extends Component
         $this->dispatch('notify', message: "Pre-cuenta de {$order->account_label} enviada a imprimir", type: 'success');
     }
 
+    public function mergeTableAccounts(int $tableId)
+    {
+        $table = Table::with('activeOrders.items')->find($tableId);
+        if (!$table || $table->activeOrders->count() <= 1) {
+            $this->dispatch('notify', message: "Se requieren al menos 2 cuentas activas para unificarlas", type: 'warning');
+            return;
+        }
+
+        $orders = $table->activeOrders()->orderBy('id')->get();
+        $mainOrder = $orders->first();
+
+        // Mover todos los ítems de las cuentas secundarias a la cuenta principal
+        foreach ($orders->slice(1) as $secondaryOrder) {
+            foreach ($secondaryOrder->items as $item) {
+                $item->order_id = $mainOrder->id;
+                $item->save();
+            }
+            $secondaryOrder->delete();
+        }
+
+        $mainOrder->account_label = 'Cuenta Unificada';
+        $mainOrder->calculateTotals();
+        $table->syncStatus();
+
+        $this->dispatch('notify', message: "Todas las cuentas de {$table->name} han sido unificadas en una sola cuenta", type: 'success');
+        $this->showTableModal = true;
+    }
+
     public function createTakeoutOrder()
     {
         $waiter = auth()->user() ?? \App\Models\User::where('email', 'mesonero1@jsfood.dev')->first() ?? \App\Models\User::first();
