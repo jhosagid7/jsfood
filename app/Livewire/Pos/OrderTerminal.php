@@ -32,6 +32,11 @@ class OrderTerminal extends Component
     public string $discountType = 'percent'; // 'percent' o 'fixed'
     public float $discountValue = 0.00;
 
+    // División de Cuenta (Split Bill por Ítems)
+    public bool $showSplitModal = false;
+    public string $splitNewAccountLabel = '';
+    public array $splitQuantities = [];
+
     public function mount($tableId = null)
     {
         $this->tableId = $tableId ? (int) $tableId : null;
@@ -288,6 +293,111 @@ class OrderTerminal extends Component
         $this->discountValue = 0.00;
         $this->showDiscountModal = false;
         $this->dispatch('notify', message: "Descuento removido", type: 'info');
+    }
+
+    public function openSplitModal()
+    {
+        if (!$this->orderId) return;
+        $order = Order::with('items.product')->find($this->orderId);
+        if (!$order || $order->items->isEmpty()) {
+            $this->dispatch('notify', message: "La comanda no tiene productos para dividir", type: 'warning');
+            return;
+        }
+
+        $table = $order->diningTable;
+        $nextNum = $table ? ($table->activeOrders()->count() + 1) : 2;
+        $this->splitNewAccountLabel = "Cuenta {$nextNum}";
+
+        $this->splitQuantities = [];
+        foreach ($order->items as $item) {
+            $this->splitQuantities[$item->id] = 0;
+        }
+
+        $this->showSplitModal = true;
+    }
+
+    public function incrementSplitQty(int $itemId)
+    {
+        $order = Order::with('items')->find($this->orderId);
+        $item = $order?->items->firstWhere('id', $itemId);
+        if (!$item) return;
+
+        $current = $this->splitQuantities[$itemId] ?? 0;
+        if ($current < $item->quantity) {
+            $this->splitQuantities[$itemId] = $current + 1;
+        }
+    }
+
+    public function decrementSplitQty(int $itemId)
+    {
+        $current = $this->splitQuantities[$itemId] ?? 0;
+        if ($current > 0) {
+            $this->splitQuantities[$itemId] = $current - 1;
+        }
+    }
+
+    public function executeSplitOrder()
+    {
+        if (!$this->orderId) return;
+        $currentOrder = Order::with('items.product')->find($this->orderId);
+        if (!$currentOrder) return;
+
+        $totalItemsToMove = array_sum($this->splitQuantities);
+        if ($totalItemsToMove <= 0) {
+            $this->dispatch('notify', message: "Debes seleccionar al menos un producto para mover a la nueva cuenta", type: 'warning');
+            return;
+        }
+
+        $waiter = $this->resolveWaiter();
+        $label = trim($this->splitNewAccountLabel) ?: 'Sub-cuenta';
+
+        $newOrder = Order::create([
+            'table_id' => $currentOrder->table_id,
+            'area_id' => $currentOrder->area_id,
+            'user_id' => $waiter->id,
+            'customer_id' => null,
+            'service_type' => $currentOrder->service_type,
+            'account_label' => $label,
+            'status' => $currentOrder->status,
+        ]);
+
+        foreach ($this->splitQuantities as $itemId => $qtyToMove) {
+            if ($qtyToMove <= 0) continue;
+
+            $item = $currentOrder->items->firstWhere('id', $itemId);
+            if (!$item) continue;
+
+            if ($qtyToMove >= $item->quantity) {
+                $item->order_id = $newOrder->id;
+                $item->save();
+            } else {
+                $item->quantity -= $qtyToMove;
+                $item->subtotal_usd = round($item->quantity * $item->unit_price_usd, 2);
+                $item->save();
+
+                OrderItem::create([
+                    'order_id' => $newOrder->id,
+                    'product_id' => $item->product_id,
+                    'quantity' => $qtyToMove,
+                    'unit_price_usd' => $item->unit_price_usd,
+                    'subtotal_usd' => round($qtyToMove * $item->unit_price_usd, 2),
+                    'notes' => $item->notes,
+                    'kitchen_status' => $item->kitchen_status,
+                    'modifiers_data' => $item->modifiers_data,
+                ]);
+            }
+        }
+
+        $currentOrder->calculateTotals();
+        $newOrder->calculateTotals();
+
+        if ($currentOrder->diningTable) {
+            $currentOrder->diningTable->syncStatus();
+        }
+
+        $this->showSplitModal = false;
+        $this->splitQuantities = [];
+        $this->dispatch('notify', message: "Cuenta dividida exitosamente. Se creó '{$label}'.", type: 'success');
     }
 
     public function cancelOrder()

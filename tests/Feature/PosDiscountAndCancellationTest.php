@@ -9,6 +9,7 @@ use App\Models\Configuration;
 use Livewire\Livewire;
 use App\Livewire\Cashier\CashierRegister;
 use App\Livewire\Tables\TableMap;
+use App\Livewire\Pos\OrderTerminal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Database\Seeders\RoleSeeder;
 use Database\Seeders\UserSeeder;
@@ -279,6 +280,73 @@ class PosDiscountAndCancellationTest extends TestCase
         $this->assertEquals(2, $mergedOrder->items()->count());
         $this->assertEquals(25.00, $mergedOrder->total_usd);
     }
+
+    public function test_cashier_can_split_bill_equally()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $order = Order::create([
+            'user_id' => $user->id,
+            'order_number' => 'ORD-SPLIT-EQ',
+            'service_type' => 'dine_in',
+            'status' => 'pending',
+            'subtotal_usd' => 60.00,
+            'total_usd' => 60.00,
+        ]);
+
+        Livewire::test(CashierRegister::class, ['order_id' => $order->id])
+            ->call('selectOrder', $order->id)
+            ->call('splitEqually', 3)
+            ->assertSet('amountReceived', 20.00)
+            ->assertDispatched('notify');
+    }
+
+    public function test_order_terminal_can_split_order_by_items()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $table = \App\Models\Table::first();
+        $burger = \App\Models\Product::first();
+
+        $order = Order::create([
+            'table_id' => $table->id,
+            'user_id' => $user->id,
+            'order_number' => 'ORD-SPLIT-ITEMS',
+            'service_type' => 'dine_in',
+            'account_label' => 'Cuenta Principal',
+            'status' => 'pending',
+            'subtotal_usd' => 20.00,
+            'total_usd' => 20.00,
+        ]);
+
+        $item = $order->items()->create([
+            'product_id' => $burger->id,
+            'quantity' => 2,
+            'unit_price_usd' => 10.00,
+            'subtotal_usd' => 20.00,
+        ]);
+
+        Livewire::test(OrderTerminal::class, ['tableId' => $table->id])
+            ->set('orderId', $order->id)
+            ->call('openSplitModal')
+            ->set('splitNewAccountLabel', 'Cuenta Amigo')
+            ->set('splitQuantities.' . $item->id, 1)
+            ->call('executeSplitOrder')
+            ->assertDispatched('notify');
+
+        // La orden original ahora tiene 1 ítem y total $10
+        $this->assertEquals(1, $order->fresh()->items()->first()->quantity);
+        $this->assertEquals(10.00, $order->fresh()->total_usd);
+
+        // La nueva sub-cuenta tiene 1 ítem y total $10
+        $newOrder = Order::where('table_id', $table->id)->where('account_label', 'Cuenta Amigo')->first();
+        $this->assertNotNull($newOrder);
+        $this->assertEquals(1, $newOrder->items()->count());
+        $this->assertEquals(10.00, $newOrder->total_usd);
+    }
 }
+
 
 

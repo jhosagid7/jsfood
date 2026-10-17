@@ -248,6 +248,25 @@
                         </div>
                     @endif
 
+                    <!-- División Rápida de Cuenta en Partes Iguales (Split Bill) -->
+                    <div class="bg-slate-950/80 p-3 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-base">👥</span>
+                            <div>
+                                <span class="text-xs font-bold text-white block">Dividir Cuenta en Partes Iguales:</span>
+                                <span class="text-[11px] text-slate-400">Calcula la cuota por persona y precarga el monto</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-1.5">
+                            @foreach([2, 3, 4, 5] as $n)
+                                <button type="button" wire:click="splitEqually({{ $n }})" 
+                                    class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-xs font-black text-slate-300 border border-slate-700 transition-all cursor-pointer">
+                                    ÷ {{ $n }} (${{ number_format(($selectedOrder->total_usd ?? 0) / $n, 2) }})
+                                </button>
+                            @endforeach
+                        </div>
+                    </div>
+
                     <!-- Campos de Monto Recibido, Referencia y Comprobante de Pago -->
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
                         <div>

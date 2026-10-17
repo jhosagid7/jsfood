@@ -257,7 +257,16 @@
                             </a>
                         </div>
 
-                        <!-- 4. Cancelar / Descartar Orden -->
+                        <!-- 4. Dividir / Separar Ítems a Nueva Cuenta -->
+                        @if($currentOrder && $currentOrder->items->count() > 0)
+                            <button type="button" wire:click="openSplitModal"
+                                class="w-full py-2.5 px-3 rounded-xl bg-purple-950/70 hover:bg-purple-900 border border-purple-700/60 text-purple-200 font-bold text-xs flex items-center justify-center space-x-1.5 transition-all shadow-sm cursor-pointer">
+                                <span>✂️</span>
+                                <span>Dividir Cuenta (Separar Platos a Otra Cuenta)</span>
+                            </button>
+                        @endif
+
+                        <!-- 5. Cancelar / Descartar Orden -->
                         <button wire:click="cancelOrder"
                             wire:confirm="¿Estás seguro de cancelar o descartar esta orden? Esta acción no se puede deshacer."
                             class="w-full py-2 px-3 rounded-xl bg-slate-950 hover:bg-red-950/60 border border-slate-800 hover:border-red-800 text-slate-400 hover:text-red-300 font-bold text-xs flex items-center justify-center space-x-1.5 transition-all">
@@ -368,6 +377,82 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    @endif
+
+    <!-- MODAL DE DIVISIÓN DE CUENTA POR ÍTEMS (SPLIT BILL) -->
+    @if($showSplitModal && $currentOrder)
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+            <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col max-h-[90vh]">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-2xl">✂️</span>
+                        <div>
+                            <h3 class="text-lg font-black text-white">Dividir Cuenta / Separar Platos</h3>
+                            <span class="text-xs text-slate-400">Selecciona los platos que deseas mover a una nueva sub-cuenta</span>
+                        </div>
+                    </div>
+                    <button wire:click="$set('showSplitModal', false)" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+                        ✕
+                    </button>
+                </div>
+
+                <!-- Nombre de la Nueva Cuenta Destino -->
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Nombre o Etiqueta de la Nueva Sub-Cuenta:</label>
+                    <input type="text" wire:model="splitNewAccountLabel" placeholder="Ej: Cuenta 2, Amigo Carlos, etc."
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-bold focus:ring-2 focus:ring-purple-500 focus:outline-none">
+                </div>
+
+                <!-- Lista de Ítems a Mover -->
+                <div class="flex-1 overflow-y-auto space-y-2.5 divide-y divide-slate-800/60 pr-1 mb-4">
+                    @foreach($currentOrder->items as $item)
+                        @php
+                            $qtyToMove = $splitQuantities[$item->id] ?? 0;
+                        @endphp
+                        <div class="pt-2 first:pt-0 flex items-center justify-between" wire:key="split-item-{{ $item->id }}">
+                            <div class="flex-1 pr-3">
+                                <h5 class="text-sm font-bold text-white leading-tight">
+                                    {{ $item->product->name ?? 'Producto' }}
+                                </h5>
+                                <div class="text-xs text-slate-400">
+                                    Disponibles: <strong class="text-amber-400">{{ $item->quantity }}x</strong> • (${{ number_format($item->unit_price_usd, 2) }} c/u)
+                                </div>
+                            </div>
+
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs text-slate-400 font-semibold mr-1">Mover:</span>
+                                <div class="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                                    <button type="button" wire:click="decrementSplitQty({{ $item->id }})"
+                                        class="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center text-xs">
+                                        -
+                                    </button>
+                                    <span class="w-6 text-center text-xs font-black {{ $qtyToMove > 0 ? 'text-purple-300' : 'text-slate-500' }}">
+                                        {{ $qtyToMove }}
+                                    </span>
+                                    <button type="button" wire:click="incrementSplitQty({{ $item->id }})"
+                                        class="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center text-xs">
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+
+                <!-- Botones de Acción -->
+                <div class="pt-3 border-t border-slate-800 flex items-center space-x-2">
+                    <button type="button" wire:click="$set('showSplitModal', false)"
+                        class="w-1/3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="executeSplitOrder"
+                        class="w-2/3 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs shadow-lg shadow-purple-600/25 flex items-center justify-center space-x-2 cursor-pointer">
+                        <span>✂️</span>
+                        <span>Confirmar División de Cuenta</span>
+                    </button>
+                </div>
             </div>
         </div>
     @endif

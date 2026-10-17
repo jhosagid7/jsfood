@@ -307,6 +307,28 @@ class CashierRegister extends Component
         }
     }
 
+    public function splitEqually(int $persons)
+    {
+        if ($persons <= 1) return;
+        $order = Order::find($this->selectedOrderId);
+        if (!$order) return;
+
+        $amountPerPerson = round($order->total_usd / $persons, 2);
+        
+        $config = Configuration::first();
+        if (in_array($this->selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
+            $rate = $config->bcv_rate ?? 60.00;
+            $this->amountReceived = round($amountPerPerson * $rate, 2);
+        } elseif (in_array($this->selectedPaymentMethod, ['cash_cop', 'nequi'])) {
+            $rate = $config->cop_rate ?? 4100.00;
+            $this->amountReceived = round($amountPerPerson * $rate, 0);
+        } else {
+            $this->amountReceived = $amountPerPerson;
+        }
+
+        $this->dispatch('notify', message: "Cuenta dividida entre {$persons}: cuota de \${$amountPerPerson} c/u", type: 'info');
+    }
+
     private function recalculateRemaining()
     {
         $order = Order::find($this->selectedOrderId);
