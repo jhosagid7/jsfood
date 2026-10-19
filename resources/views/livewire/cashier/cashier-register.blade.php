@@ -46,9 +46,20 @@
                                     {{ $ord->account_label }}
                                 </span>
                             </div>
-                            <span class="text-base font-black text-white">
-                                ${{ number_format($ord->total_usd, 2) }}
-                            </span>
+                            <div class="text-right">
+                                <span class="text-base font-black text-white">
+                                    ${{ number_format($ord->total_usd, 2) }}
+                                </span>
+                                @php
+                                    $paidSum = $ord->payments->sum('amount_usd');
+                                    $pendingSum = max(0, $ord->total_usd - $paidSum);
+                                @endphp
+                                @if($paidSum > 0 && $pendingSum > 0)
+                                    <span class="block text-[10px] font-black text-amber-400">
+                                        Resta: ${{ number_format($pendingSum, 2) }}
+                                    </span>
+                                @endif
+                            </div>
                         </div>
 
                         <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
@@ -108,11 +119,28 @@
                                     <span>{{ $selectedOrder->discount_usd > 0 ? 'Modificar Desc.' : '+ Descuento' }}</span>
                                 </button>
                             </div>
-                            <div class="flex items-baseline justify-end space-x-1">
-                                <span class="text-xs text-slate-400 font-bold uppercase mr-1">Total:</span>
-                                <span class="text-3xl font-black text-amber-400">
-                                    ${{ number_format($selectedOrder->total_usd, 2) }}
-                                </span>
+                            @php
+                                $totalPaidSoFar = collect($appliedPayments)->sum('amount_usd');
+                                $remainingToPay = max(0, $selectedOrder->total_usd - $totalPaidSoFar);
+                            @endphp
+
+                            <div class="flex items-baseline justify-end space-x-3">
+                                @if($totalPaidSoFar > 0)
+                                    <div class="text-right">
+                                        <span class="text-[11px] text-emerald-400 font-bold uppercase block">Abonado:</span>
+                                        <span class="text-sm font-black text-emerald-400">
+                                            -${{ number_format($totalPaidSoFar, 2) }}
+                                        </span>
+                                    </div>
+                                @endif
+                                <div class="text-right">
+                                    <span class="text-xs text-slate-400 font-bold uppercase block">
+                                        {{ $totalPaidSoFar > 0 ? 'Resta por Cobrar:' : 'Total:' }}
+                                    </span>
+                                    <span class="text-3xl font-black text-amber-400">
+                                        ${{ number_format($totalPaidSoFar > 0 ? $remainingToPay : $selectedOrder->total_usd, 2) }}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -260,8 +288,9 @@
                         <div class="flex items-center space-x-1.5">
                             @foreach([2, 3, 4, 5] as $n)
                                 <button type="button" wire:click="splitEqually({{ $n }})" 
-                                    class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-xs font-black text-slate-300 border border-slate-700 transition-all cursor-pointer">
-                                    ÷ {{ $n }} (${{ number_format(($selectedOrder->total_usd ?? 0) / $n, 2) }})
+                                    wire:loading.attr="disabled"
+                                    class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-amber-500 hover:text-slate-950 disabled:opacity-50 text-xs font-black text-slate-300 border border-slate-700 transition-all cursor-pointer">
+                                    ÷ {{ $n }} (${{ number_format((($totalPaidSoFar > 0 ? $remainingToPay : ($selectedOrder->total_usd ?? 0))) / $n, 2) }})
                                 </button>
                             @endforeach
                         </div>
@@ -297,10 +326,11 @@
                     <!-- Botón para Agregar al Desglose si es Pago Mixto -->
                     <div class="flex justify-end">
                         <button wire:click="addPayment" wire:loading.attr="disabled"
-                            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center space-x-1.5 transition-colors">
+                            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer">
                             <span wire:loading.remove wire:target="addPayment">➕</span>
                             <span wire:loading wire:target="addPayment" class="animate-spin">⏳</span>
-                            <span>Guardar Abono / Pago Parcial</span>
+                            <span wire:loading.remove wire:target="addPayment">Guardar Abono / Pago Parcial</span>
+                            <span wire:loading wire:target="addPayment">Guardando abono...</span>
                         </button>
                     </div>
 
@@ -338,10 +368,28 @@
 
                     <!-- BOTÓN PRINCIPAL DE COBRO Y EMISIÓN DE TICKET -->
                     <div class="pt-4 border-t border-slate-800">
-                        <button wire:click="processCheckout"
-                            class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-lg flex items-center justify-center space-x-3 shadow-xl shadow-emerald-600/30 transition-all transform active:scale-95">
-                            <span>🖨️</span>
-                            <span>COBRAR Y EMITIR FACTURA TÉRMICA ({{ $config->printer_width ?? 80 }}mm)</span>
+                        @php
+                            $rate = 1.0;
+                            if (in_array($selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
+                                $rate = $config->bcv_rate ?? 60.00;
+                            } elseif (in_array($selectedPaymentMethod, ['cash_cop', 'nequi'])) {
+                                $rate = $config->cop_rate ?? 4100.00;
+                            }
+                            $amountUsdInput = (in_array($selectedPaymentMethod, ['cash_ved', 'mobile_pay', 'cash_cop', 'nequi']) && $rate > 0)
+                                ? ((float)$amountReceived / $rate)
+                                : (float)$amountReceived;
+                            $willCoverTotal = ($totalPaidSoFar + $amountUsdInput) >= ($selectedOrder->total_usd - 0.01);
+                        @endphp
+                        <button wire:click="processCheckout" wire:loading.attr="disabled"
+                            class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-lg flex items-center justify-center space-x-3 shadow-xl shadow-emerald-600/30 transition-all transform active:scale-95 cursor-pointer">
+                            <span wire:loading.remove wire:target="processCheckout">🖨️</span>
+                            <span wire:loading wire:target="processCheckout" class="animate-spin">⏳</span>
+                            <span wire:loading.remove wire:target="processCheckout">
+                                {{ $willCoverTotal ? "COBRAR TOTAL Y EMITIR FACTURA TÉRMICA (" . ($config->printer_width ?? 80) . "mm)" : "REGISTRAR ABONO Y ACTUALIZAR CUENTA" }}
+                            </span>
+                            <span wire:loading wire:target="processCheckout">
+                                Procesando cobro e imprimiendo ticket...
+                            </span>
                         </button>
                         <span class="block text-center text-xs text-slate-500 mt-2">
                             Abre automáticamente la gaveta de dinero RJ11 y descuenta los insumos del inventario.

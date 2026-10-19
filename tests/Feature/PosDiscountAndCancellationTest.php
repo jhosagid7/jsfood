@@ -346,6 +346,49 @@ class PosDiscountAndCancellationTest extends TestCase
         $this->assertEquals(1, $newOrder->items()->count());
         $this->assertEquals(10.00, $newOrder->total_usd);
     }
+
+    public function test_cashier_handles_partial_payment_abono_gracefully()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $burger = \App\Models\Product::first();
+        $order = Order::create([
+            'user_id' => $user->id,
+            'order_number' => 'ORD-ABONO-TEST',
+            'service_type' => 'dine_in',
+            'status' => 'pending',
+            'subtotal_usd' => 40.00,
+            'total_usd' => 40.00,
+        ]);
+        $order->items()->create([
+            'product_id' => $burger->id,
+            'quantity' => 2,
+            'unit_price_usd' => 20.00,
+            'subtotal_usd' => 40.00,
+        ]);
+
+        $test = Livewire::test(CashierRegister::class, ['order_id' => $order->id])
+            ->call('selectOrder', $order->id)
+            ->call('splitEqually', 2)
+            ->assertSet('amountReceived', 20.00)
+            ->call('processCheckout')
+            ->assertDispatched('notify');
+
+        // La orden aún debe estar pendiente con 1 pago de $20
+        $this->assertEquals('pending', $order->fresh()->status);
+        $this->assertEquals(1, $order->fresh()->payments()->count());
+        $this->assertEquals(20.00, $order->fresh()->payments()->first()->amount_usd);
+
+        // El segundo pago completa la cuenta
+        $test->set('amountReceived', 20.00)
+            ->call('processCheckout')
+            ->assertDispatched('notify');
+
+        $this->assertEquals('paid', $order->fresh()->status);
+        $this->assertEquals(2, $order->fresh()->payments()->count());
+        $this->assertEquals(40.00, $order->fresh()->payments()->sum('amount_usd'));
+    }
 }
 
 

@@ -183,7 +183,13 @@ class CustomWindowsPrintConnector implements PrintConnector
             }
         }
 
-        // 2. Secondary Method: Windows Raw Print Spooler API via PowerShell (Fallback)
+        // If native rawprint binary is present and already failed on a network UNC path,
+        // DO NOT hang the web server with 60s network copy timeouts
+        if ($hasRawPrint && !$this->isLocal) {
+            throw new Exception("Impresora de red inaccesible en {$printerName}. Verifica que esté encendida y conectada.");
+        }
+
+        // 2. Secondary Method: Windows Raw Print Spooler API via PowerShell (Fallback when rawprint.exe missing or local)
         try {
             if ($this->sendToWin32Spooler($printerName, $data)) {
                 return;

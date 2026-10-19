@@ -314,6 +314,21 @@ class TicketPrinterService
             $printerTarget = $config->printer_name ?? 'POS-80';
         }
 
+        // Si el destino es una ruta UNC con IP (ej: \\192.168.20.117\POS-80-Print), resolver IP al nombre NetBIOS
+        if (str_starts_with($printerTarget, '\\\\')) {
+            $parts = explode('\\', ltrim($printerTarget, '\\'));
+            if (count($parts) >= 2) {
+                $host = $parts[0];
+                $share = $parts[1];
+                if (filter_var($host, FILTER_VALIDATE_IP)) {
+                    $resolvedHost = CustomWindowsPrintConnector::resolveIpToHostname($host);
+                    if ($resolvedHost && strtolower($resolvedHost) !== strtolower($host)) {
+                        $printerTarget = "\\\\{$resolvedHost}\\{$share}";
+                    }
+                }
+            }
+        }
+
         try {
             $connector = new CustomWindowsPrintConnector($printerTarget);
             $connector->write($rawEscposData);

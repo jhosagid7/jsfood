@@ -313,7 +313,12 @@ class CashierRegister extends Component
         $order = Order::find($this->selectedOrderId);
         if (!$order) return;
 
-        $amountPerPerson = round($order->total_usd / $persons, 2);
+        $totalPaidUsd = collect($this->appliedPayments)->sum('amount_usd');
+        $baseTotal = ($totalPaidUsd > 0 && ($order->total_usd - $totalPaidUsd) > 0)
+            ? ($order->total_usd - $totalPaidUsd)
+            : $order->total_usd;
+
+        $amountPerPerson = round($baseTotal / $persons, 2);
         
         $config = Configuration::first();
         if (in_array($this->selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
@@ -335,8 +340,18 @@ class CashierRegister extends Component
         if (!$order) return;
 
         $totalPaidUsd = collect($this->appliedPayments)->sum('amount_usd');
-        $remaining = max(0, $order->total_usd - $totalPaidUsd);
-        $this->amountReceived = round($remaining, 2);
+        $remainingUsd = max(0, $order->total_usd - $totalPaidUsd);
+
+        $config = Configuration::first();
+        if (in_array($this->selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
+            $rate = $config->bcv_rate ?? 60.00;
+            $this->amountReceived = round($remainingUsd * $rate, 2);
+        } elseif (in_array($this->selectedPaymentMethod, ['cash_cop', 'nequi'])) {
+            $rate = $config->cop_rate ?? 4100.00;
+            $this->amountReceived = round($remainingUsd * $rate, 0);
+        } else {
+            $this->amountReceived = round($remainingUsd, 2);
+        }
     }
 
     public function processCheckout()
@@ -347,16 +362,17 @@ class CashierRegister extends Component
             return;
         }
 
-        // Si no se agregaron pagos previos, registrar el total con el método seleccionado
-        if (empty($this->appliedPayments)) {
+        // Si se ingresó un monto en amountReceived, registrarlo como abono o pago
+        if ((float) $this->amountReceived > 0) {
             $this->addPayment();
             $order->load('payments');
         }
 
         $totalPaidUsd = collect($this->appliedPayments)->sum('amount_usd');
-        if ($totalPaidUsd < $order->total_usd) {
+        // Si aún no se cubre el total (con tolerancia de centavos)
+        if ($totalPaidUsd < ($order->total_usd - 0.01)) {
             $faltante = number_format($order->total_usd - $totalPaidUsd, 2);
-            $this->dispatch('notify', message: "Monto insuficiente. Falta por cubrir: \${$faltante}", type: 'warning');
+            $this->dispatch('notify', message: "✅ Abono registrado exitosamente. Resta por pagar: \${$faltante}", type: 'success');
             return;
         }
 
@@ -449,7 +465,7 @@ class CashierRegister extends Component
 
     public function render()
     {
-        $pendingOrders = Order::with(['diningTable', 'customer', 'items.product'])
+        $pendingOrders = Order::with(['diningTable', 'customer', 'items.product', 'payments'])
             ->whereNotIn('status', ['paid', 'cancelled'])
             ->orderBy('created_at', 'desc')
             ->get();
