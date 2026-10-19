@@ -85,9 +85,15 @@
                 @forelse($products as $product)
                     <div wire:click="addProduct({{ $product->id }})"
                         wire:key="prod-card-{{ $product->id }}"
-                        class="bg-slate-900 border border-slate-800 hover:border-amber-500/60 rounded-2xl p-3.5 cursor-pointer transition-all duration-150 transform active:scale-95 flex flex-col justify-between h-36 select-none shadow-md group">
+                        class="bg-slate-900 border border-slate-800 hover:border-amber-500/60 rounded-2xl p-3 cursor-pointer transition-all duration-150 transform active:scale-95 flex flex-col justify-between select-none shadow-md group overflow-hidden">
                         
                         <div>
+                            @if($product->image)
+                                <div class="h-20 w-full rounded-xl overflow-hidden mb-2 bg-slate-950 border border-slate-800/80">
+                                    <img src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200">
+                                </div>
+                            @endif
+
                             <div class="flex items-center justify-between">
                                 <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                                     {{ $product->category->name ?? '' }}
@@ -96,9 +102,9 @@
                                     <span class="text-[9px] font-bold px-1.5 py-0.5 rounded {{ $product->current_stock > 5 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-red-950 text-red-400 border border-red-800' }}">
                                         {{ (int)$product->current_stock }} disp.
                                     </span>
-                                @elseif($product->has_recipe)
+                                @elseif($product->send_to_kitchen)
                                     <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-950 text-purple-400 border border-purple-800">
-                                        Cocina / Receta
+                                        🍳 Cocina
                                     </span>
                                 @endif
                             </div>
@@ -108,7 +114,7 @@
                             </h4>
                         </div>
 
-                        <div class="pt-2 border-t border-slate-800 flex items-center justify-between">
+                        <div class="pt-2 border-t border-slate-800 flex items-center justify-between mt-2">
                             <span class="text-base font-black text-amber-400">
                                 ${{ number_format($product->price_usd, 2) }}
                             </span>

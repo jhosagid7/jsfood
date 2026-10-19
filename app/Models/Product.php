@@ -16,6 +16,7 @@ class Product extends Model
     protected $casts = [
         'has_recipe' => 'boolean',
         'track_stock' => 'boolean',
+        'send_to_kitchen' => 'boolean',
         'is_active' => 'boolean',
         'price_usd' => 'float',
         'current_stock' => 'float',

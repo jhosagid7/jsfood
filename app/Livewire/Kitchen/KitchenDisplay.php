@@ -16,12 +16,16 @@ class KitchenDisplay extends Component
 
     public function mount()
     {
-        $this->knownOrderIds = Order::whereIn('status', ['pending', 'in_kitchen'])->pluck('id')->toArray();
+        $this->knownOrderIds = Order::whereIn('status', ['pending', 'in_kitchen'])
+            ->whereHas('items.product', fn($q) => $q->where('send_to_kitchen', true))
+            ->pluck('id')->toArray();
     }
 
     public function checkNewOrders()
     {
-        $currentActiveIds = Order::whereIn('status', ['pending', 'in_kitchen'])->pluck('id')->toArray();
+        $currentActiveIds = Order::whereIn('status', ['pending', 'in_kitchen'])
+            ->whereHas('items.product', fn($q) => $q->where('send_to_kitchen', true))
+            ->pluck('id')->toArray();
         $newIds = array_diff($currentActiveIds, $this->knownOrderIds);
 
         if (!empty($newIds)) {
@@ -70,15 +74,19 @@ class KitchenDisplay extends Component
         $config = Configuration::first();
         $kitchenWidth = $config->kitchen_printer_width ?? 58;
         $escpos = TicketPrinterService::buildKitchenTicket($order, $kitchenWidth);
-        TicketPrinterService::sendToPrinter($escpos, $config->kitchen_printer_name ?? 'KITCHEN-58');
-
-        $this->dispatch('notify', message: "Comanda reimpresa en tiquera de cocina", type: 'success');
+        if (!empty($escpos)) {
+            TicketPrinterService::sendToPrinter($escpos, $config->kitchen_printer_name ?? 'KITCHEN-58');
+            $this->dispatch('notify', message: "Comanda reimpresa en tiquera de cocina", type: 'success');
+        } else {
+            $this->dispatch('notify', message: "La orden no contiene ítems para cocina", type: 'warning');
+        }
     }
 
     public function render()
     {
         $query = Order::with(['items.product', 'diningTable', 'user'])
-            ->whereNotIn('status', ['paid', 'cancelled']);
+            ->whereNotIn('status', ['paid', 'cancelled'])
+            ->whereHas('items.product', fn($q) => $q->where('send_to_kitchen', true));
 
         if ($this->filter === 'in_kitchen') {
             $query->where('status', 'in_kitchen');

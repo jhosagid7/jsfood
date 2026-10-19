@@ -196,13 +196,16 @@ class OrderTerminal extends Component
 
         $order->sendToKitchen();
 
-        // Enviar a la impresora de cocina automáticamente
+        // Enviar a la impresora de cocina automáticamente si hay platos para cocina
         $config = Configuration::first();
         $kitchenWidth = $config->kitchen_printer_width ?? 58;
         $escpos = TicketPrinterService::buildKitchenTicket($order, $kitchenWidth);
-        TicketPrinterService::sendToPrinter($escpos, $config->kitchen_printer_name ?? 'KITCHEN-58');
-
-        $this->dispatch('notify', message: "Comanda enviada a Cocina e Impresora Térmica 🍳", type: 'success');
+        if (!empty($escpos)) {
+            TicketPrinterService::sendToPrinter($escpos, $config->kitchen_printer_name ?? 'KITCHEN-58');
+            $this->dispatch('notify', message: "Comanda enviada a Cocina e Impresora Térmica 🍳", type: 'success');
+        } else {
+            $this->dispatch('notify', message: "Orden procesada (Ítems directos, no requieren impresión en cocina) 🥤", type: 'info');
+        }
     }
 
     public function printPreBill()

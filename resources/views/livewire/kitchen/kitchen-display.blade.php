@@ -91,7 +91,7 @@
 
                 <!-- Detalle de Platos a Preparar -->
                 <div class="p-4 flex-1 space-y-3 overflow-y-auto max-h-72">
-                    @foreach($order->items as $item)
+                    @foreach($order->items->filter(fn($i) => $i->product ? (bool)$i->product->send_to_kitchen : true) as $item)
                         <div class="bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/80 space-y-1">
                             <div class="flex items-start space-x-2">
                                 <span class="w-7 h-7 rounded-lg bg-amber-500 text-slate-950 font-black text-sm flex items-center justify-center shrink-0">

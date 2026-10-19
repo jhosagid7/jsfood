@@ -63,6 +63,18 @@ class TicketPrinterService
      */
     public static function buildKitchenTicket(Order $order, int $widthMm = 80): string
     {
+        // Solo ítems que requieran preparación en cocina (excluir refrescos/bebidas directas que no van a cocina)
+        $kitchenItems = $order->items->filter(function ($item) {
+            if (!$item->product) {
+                return true;
+            }
+            return (bool) ($item->product->send_to_kitchen ?? true);
+        });
+
+        if ($kitchenItems->isEmpty()) {
+            return '';
+        }
+
         $w = self::getColumnWidth($widthMm);
         $out = self::INIT_PRINTER;
 
@@ -91,7 +103,7 @@ class TicketPrinterService
         $out .= self::BOLD_OFF;
         $out .= self::separator($w, '-');
 
-        foreach ($order->items as $item) {
+        foreach ($kitchenItems as $item) {
             $prodName = $item->product ? $item->product->name : 'Producto';
             $qtyText = "{$item->quantity}x";
 

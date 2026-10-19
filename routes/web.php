@@ -9,6 +9,8 @@ use App\Livewire\Kitchen\KitchenDisplay;
 use App\Livewire\Cashier\CashierRegister;
 use App\Livewire\Settings\PrinterSettings;
 use App\Livewire\Settings\DeviceManager;
+use App\Livewire\Products\ProductList;
+use App\Livewire\Products\CategoryManager;
 
 // 0. Autenticación y Salida
 Route::get('/login', Login::class)->name('login')->middleware('guest');
@@ -43,7 +45,11 @@ Route::middleware(['auth'])->group(function () {
     // 4. Caja, Pre-cuenta y Cobro Multimoneda
     Route::get('/cashier', CashierRegister::class)->name('cashier.index');
 
-    // 5. Ajustes de Impresoras y Dispositivos (Ecosistema jspos-sales)
+    // 5. Catálogo de Productos, Menú y Categorías
+    Route::get('/products', ProductList::class)->name('products.index');
+    Route::get('/categories', CategoryManager::class)->name('categories.index');
+
+    // 6. Ajustes de Impresoras y Dispositivos (Ecosistema jspos-sales)
     Route::get('/settings/printers', PrinterSettings::class)->name('settings.printers');
     Route::get('/settings/devices', DeviceManager::class)->name('settings.devices');
 });
