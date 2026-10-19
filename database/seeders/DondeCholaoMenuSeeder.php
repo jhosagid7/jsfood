@@ -387,8 +387,40 @@ class DondeCholaoMenuSeeder extends Seeder
             ],
         ];
 
+        $imageMap = [
+            'PERRO-PROMO' => 'products/perros_calientes_2x.jpg',
+            'PERRO-NORM' => 'products/perro_caliente_normal.jpg',
+            'PERRO-ASADA' => 'products/perro_caliente_asada.jpg',
+            'PERRO-MECHADA' => 'products/perro_caliente_mechada.jpg',
+            'HAMB-CLASICA' => 'products/hamburguesa_clasica.jpg',
+            'HAMB-ASADA' => 'products/hamburguesa_carne_asada.jpg',
+            'HAMB-MECHADA' => 'products/hamburguesa_carne_mechada.jpg',
+            'HAMB-POLLO' => 'products/hamburguesa_pollo.jpg',
+            'HAMB-CERDO' => 'products/hamburguesa_lomito_cerdo.jpg',
+            'HAMB-MIXTA' => 'products/hamburguesa_mixta.jpg',
+            'HAMB-TRIPLE' => 'products/hamburguesa_triple.jpg',
+            'CARNE-250G' => 'products/carne_en_vara_cuarto.jpg',
+            'CARNE-500G' => 'products/carne_en_vara_medio.jpg',
+            'CARNE-750G' => 'products/carne_en_vara_trescuartos.jpg',
+            'CARNE-1000G' => 'products/carne_en_vara_kilo.jpg',
+            'PAPAS-FRANC' => 'products/papas_a_la_francesa.jpg',
+            'MERENG-LECHE' => 'products/merengada_leche.jpg',
+            'JUGO-NATURAL' => 'products/jugo_natural.jpg',
+            'BEB-COCA350' => 'products/coca_cola_botella_350ml.jpg',
+            'BEB-COCA1L' => 'products/coca_cola_1l.jpg',
+            'BEB-COCA15L' => 'products/coca_cola_1_5l.jpg',
+            'BEB-COCA2L' => 'products/coca_cola_2l.jpg',
+            'BEB-PEPSI350' => 'products/pepsi_botella_350ml.jpg',
+            'BEB-PEPSI1L' => 'products/pepsi_1l.jpg',
+            'BEB-PEPSI15L' => 'products/pepsi_1_5l.jpg',
+            'BEB-PEPSI2L' => 'products/pepsi_2l.jpg',
+            'BEB-AGUA600' => 'products/agua_nevada_600ml.jpg',
+            'BEB-AGUA15L' => 'products/agua_nevada_1_5l.jpg',
+        ];
+
         foreach ($products as $p) {
             $cat = $categories[$p['category_slug']] ?? null;
+            $img = $imageMap[$p['code']] ?? null;
             Product::updateOrCreate(
                 ['code' => $p['code']],
                 [
@@ -403,6 +435,7 @@ class DondeCholaoMenuSeeder extends Seeder
                     'current_stock' => $p['current_stock'],
                     'min_stock' => $p['min_stock'],
                     'unit' => $p['unit'],
+                    'image' => $img,
                     'is_active' => true,
                 ]
             );
