@@ -160,8 +160,14 @@ class CheckDeviceAuthorization
         }
 
         // VALIDACIÓN DE AUTORIZACIÓN DEL DISPOSITIVO
+        // SUPER ADMIN BYPASS: Si el usuario autenticado es Super Admin, NUNCA se bloquea
+        // (permite entrar siempre a solucionar bloqueos accidentales o gestionar dispositivos)
+        if (auth()->check() && (auth()->user()->hasRole('Super Admin') || auth()->user()->email === 'admin@jsfood.dev')) {
+            return $next($request);
+        }
+
         if ($device->status !== 'approved') {
-            // 1. Si el dispositivo fue RECHAZADO / BLOQUEADO, se bloquea SIEMPRE sin importar el usuario
+            // 1. Si el dispositivo fue RECHAZADO / BLOQUEADO, se bloquea
             if ($device->status === 'rejected') {
                 if ($request->header('X-Livewire')) {
                     return response('', 403)->header('X-Livewire-Redirect', route('access.denied', ['device_uuid' => $device->uuid]));

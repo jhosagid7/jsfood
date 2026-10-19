@@ -41,10 +41,10 @@ class DeviceAuthorizationTest extends TestCase
         $response->assertStatus(200);
     }
 
-    public function test_rejected_device_is_blocked_even_for_super_admin()
+    public function test_rejected_device_is_blocked_for_normal_users()
     {
-        $superAdmin = User::where('email', 'admin@jsfood.dev')->first() ?? User::first();
-        $this->actingAs($superAdmin);
+        $waiter = User::where('email', 'mesonero1@jsfood.dev')->first() ?? User::factory()->create();
+        $this->actingAs($waiter);
 
         $device = DeviceAuthorization::create([
             'uuid' => 'test-device-rejected-uuid',
@@ -62,9 +62,30 @@ class DeviceAuthorizationTest extends TestCase
         $response->assertRedirect(route('access.denied', ['device_uuid' => $device->uuid]));
     }
 
+    public function test_super_admin_is_never_blocked_by_device_authorization()
+    {
+        $superAdmin = User::where('email', 'admin@jsfood.dev')->first();
+        $this->actingAs($superAdmin);
+
+        $device = DeviceAuthorization::create([
+            'uuid' => 'test-device-superadmin-rejected-uuid',
+            'name' => 'Dispositivo Bloqueado de SuperAdmin',
+            'ip_address' => '192.168.20.205',
+            'user_agent' => 'TestBrowser/1.0',
+            'status' => 'rejected',
+            'last_accessed_at' => now(),
+        ]);
+
+        $response = $this->withCookie('device_token', $device->uuid)
+            ->get('/tables');
+
+        // Super Admin nunca es bloqueado
+        $response->assertStatus(200);
+    }
+
     public function test_rejected_device_matched_by_ip_fingerprint_is_blocked()
     {
-        $user = User::first();
+        $user = User::where('email', 'mesonero1@jsfood.dev')->first() ?? User::factory()->create();
         $this->actingAs($user);
 
         $device = DeviceAuthorization::create([
