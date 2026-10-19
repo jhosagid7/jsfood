@@ -16,7 +16,12 @@ class CheckDeviceAuthorization
     public function handle(Request $request, Closure $next): Response
     {
         // Exclude public routes, login/logout, livewire assets, and access-denied
-        if ($request->is('login', 'logout', 'register', 'password/*', 'access-denied', 'livewire/*', 'up')) {
+        if ($request->is('login', 'logout', 'register', 'password/*', 'access-denied', 'up')) {
+            return $next($request);
+        }
+
+        // Exclude static assets and Livewire JS/CSS scripts
+        if ($request->is('livewire*/livewire*.js*', 'livewire*/css/*', 'livewire*/js*') || preg_match('/\.(js|css|map|png|jpg|jpeg|svg|ico|woff|woff2|ttf)$/i', $request->path())) {
             return $next($request);
         }
 
@@ -36,23 +41,21 @@ class CheckDeviceAuthorization
             }
         }
 
-        // FINGERPRINT FALLBACK: If no device found by token, find existing APPROVED device by IP/Subnet + UA
+        // FINGERPRINT FALLBACK: If no device found by token, find existing device by IP/Subnet + UA
         // This prevents duplication from mobile apps, localhost/IPv6, or router DHCP changes.
         if (!$device) {
             $clientIp = $request->ip();
             $ua = $request->userAgent() ?? 'Unknown';
 
-            // 1. Check exact IP + UA
+            // 1. Check exact IP + UA (both approved, rejected, or pending)
             $device = \App\Models\DeviceAuthorization::where('ip_address', $clientIp)
                 ->where('user_agent', $ua)
-                ->where('status', 'approved')
                 ->orderBy('last_accessed_at', 'desc')
                 ->first();
 
             // 2. Localhost / Loopback deduplication (127.0.0.1, ::1)
             if (!$device && ($clientIp === '127.0.0.1' || $clientIp === '::1' || $clientIp === 'localhost')) {
                 $device = \App\Models\DeviceAuthorization::whereIn('ip_address', ['127.0.0.1', '::1'])
-                    ->where('status', 'approved')
                     ->orderBy('last_accessed_at', 'desc')
                     ->first();
             }
@@ -62,7 +65,6 @@ class CheckDeviceAuthorization
                 $subnetPrefix = substr($clientIp, 0, strrpos($clientIp, '.') + 1);
                 $device = \App\Models\DeviceAuthorization::where('ip_address', 'like', $subnetPrefix . '%')
                     ->where('user_agent', $ua)
-                    ->where('status', 'approved')
                     ->where('last_accessed_at', '>=', now()->subDays(7))
                     ->orderBy('last_accessed_at', 'desc')
                     ->first();
@@ -86,12 +88,11 @@ class CheckDeviceAuthorization
         if (!$device) {
             $config = \App\Models\Configuration::first();
             $isRestricted = ($config && $config->device_access_mode === 'restricted');
+            $isLocalServer = in_array($request->ip(), ['127.0.0.1', '::1', 'localhost']);
             
             // OPTIMIZATION: If it's an API request, we don't have a token, and we are NOT in restricted mode,
-            // do NOT create a new device record. This prevents DB clutter from anonymous app requests.
-            // We only create it if it's a Web request (to set cookie) or if it's Restricted (to show 'pending' to admin).
+            // do NOT create a new device record.
             if ($request->expectsJson() && !$isRestricted) {
-                // Return a dummy approved device object to allow access without DB record
                 $device = new \App\Models\DeviceAuthorization();
                 $device->status = 'approved';
                 $device->uuid = $token ?: 'anonymous';
@@ -111,8 +112,8 @@ class CheckDeviceAuthorization
                 $status = $isRestricted ? 'pending' : 'approved';
             }
             
-            // Bypass for Super Admin (if already logged in)
-            if (auth()->check() && auth()->user()->hasRole('Super Admin')) {
+            // Solo auto-aprobar Super Admin si está conectándose directamente en el servidor local
+            if ($isLocalServer && auth()->check() && auth()->user()->hasRole('Super Admin')) {
                 $status = 'approved';
             }
 
@@ -147,7 +148,6 @@ class CheckDeviceAuthorization
         } else {
             // Existing Device - Update info
             try {
-                // Update every 2 minutes instead of 60 to allow real-time online status (5m window)
                 if (!$device->last_accessed_at || $device->last_accessed_at->diffInMinutes(now()) >= 2) {
                     $device->update([
                         'ip_address' => $request->ip(),
@@ -159,26 +159,50 @@ class CheckDeviceAuthorization
             }
         }
 
+        // VALIDACIÓN DE AUTORIZACIÓN DEL DISPOSITIVO
         if ($device->status !== 'approved') {
-            // Only Super Admin can bypass / auto-approve their own devices
-            if (auth()->check() && auth()->user()->hasRole('Super Admin')) {
-                if ($device->status === 'pending') {
-                    $device->update(['status' => 'approved']);
+            // 1. Si el dispositivo fue RECHAZADO / BLOQUEADO, se bloquea SIEMPRE sin importar el usuario
+            if ($device->status === 'rejected') {
+                if ($request->header('X-Livewire')) {
+                    return response('', 403)->header('X-Livewire-Redirect', route('access.denied', ['device_uuid' => $device->uuid]));
                 }
-                return $next($request);
-            } else {
-                // If it's an API request, return JSON instead of Redirect
+
                 if ($request->expectsJson() || $request->is('api/*')) {
                     return response()->json([
-                        'message' => 'Dispositivo no autorizado.',
+                        'message' => 'Dispositivo bloqueado por el administrador.',
                         'device_uuid' => $device->uuid,
-                        'status' => $device->status,
+                        'status' => 'rejected',
                         'ip' => $request->ip()
                     ], 403);
                 }
 
                 return redirect()->route('access.denied', ['device_uuid' => $device->uuid]);
             }
+
+            // 2. Si está pendiente, permitir acceso solo si es Super Admin trabajando en la consola local del servidor
+            $isLocalServer = in_array($request->ip(), ['127.0.0.1', '::1', 'localhost']);
+            if ($isLocalServer && auth()->check() && auth()->user()->hasRole('Super Admin')) {
+                if ($device->status === 'pending') {
+                    $device->update(['status' => 'approved']);
+                }
+                return $next($request);
+            }
+
+            // 3. Para cualquier dispositivo no aprobado:
+            if ($request->header('X-Livewire')) {
+                return response('', 403)->header('X-Livewire-Redirect', route('access.denied', ['device_uuid' => $device->uuid]));
+            }
+
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'message' => 'Dispositivo no autorizado.',
+                    'device_uuid' => $device->uuid,
+                    'status' => $device->status,
+                    'ip' => $request->ip()
+                ], 403);
+            }
+
+            return redirect()->route('access.denied', ['device_uuid' => $device->uuid]);
         }
 
         $response = $next($request);

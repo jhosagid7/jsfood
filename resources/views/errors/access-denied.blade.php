@@ -8,19 +8,24 @@
 </head>
 <body class="h-full flex items-center justify-center p-4 bg-slate-950 text-slate-100">
     <div class="max-w-md w-full text-center bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl">
-        <div class="w-20 h-20 mx-auto rounded-3xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-4xl mb-6 border border-amber-500/30">
-            📱
-        </div>
-
-        <h1 class="text-2xl font-black text-white mb-2">Dispositivo Pendiente</h1>
-        <p class="text-sm text-slate-400 mb-6">
-            Este teléfono o terminal aún no ha sido autorizado para conectarse al restaurante.
-        </p>
-
         @php
             $uuid = request()->query('device_uuid', 'Desconocido');
             $device = \App\Models\DeviceAuthorization::where('uuid', $uuid)->first();
+            $isBlocked = ($device && $device->status === 'rejected');
         @endphp
+
+        <div class="w-20 h-20 mx-auto rounded-3xl {{ $isBlocked ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30' }} flex items-center justify-center text-4xl mb-6">
+            {{ $isBlocked ? '🚫' : '📱' }}
+        </div>
+
+        <h1 class="text-2xl font-black text-white mb-2">
+            {{ $isBlocked ? 'Dispositivo Bloqueado' : 'Dispositivo Pendiente' }}
+        </h1>
+        <p class="text-sm text-slate-400 mb-6">
+            {{ $isBlocked 
+                ? 'Este teléfono o terminal ha sido bloqueado por el administrador del sistema.' 
+                : 'Este teléfono o terminal aún no ha sido autorizado para conectarse al restaurante.' }}
+        </p>
 
         <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800/80 text-left text-xs space-y-2 mb-6">
             <div class="flex justify-between">
@@ -33,18 +38,22 @@
             </div>
             <div class="flex justify-between">
                 <span class="text-slate-500 font-semibold">Estado:</span>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                    {{ $device ? $device->status : 'Pendiente' }}
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider {{ $isBlocked ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30' }}">
+                    {{ $isBlocked ? 'BLOQUEADO' : ($device ? strtoupper($device->status) : 'PENDIENTE') }}
                 </span>
             </div>
         </div>
 
         <p class="text-xs text-slate-500 mb-6 leading-relaxed">
-            💡 Por favor, solicita al Administrador o Gerente que apruebe este dispositivo desde el menú:
-            <span class="text-amber-400 font-bold">Ajustes &gt; Dispositivos Autorizados</span>.
+            @if($isBlocked)
+                ⚠️ El acceso desde este dispositivo ha sido revocado. Contacta al Administrador si crees que es un error.
+            @else
+                💡 Por favor, solicita al Administrador o Gerente que apruebe este dispositivo desde el menú:
+                <span class="text-amber-400 font-bold">Ajustes &gt; Dispositivos Autorizados</span>.
+            @endif
         </p>
 
-        <a href="{{ url('/') }}" class="inline-flex items-center justify-center w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm transition-all">
+        <a href="{{ url('/') }}" class="inline-flex items-center justify-center w-full py-3 px-4 rounded-xl {{ $isBlocked ? 'bg-red-600 hover:bg-red-500' : 'bg-slate-800 hover:bg-slate-700' }} text-white font-bold text-sm transition-all">
             🔄 Reintentar Conexión
         </a>
     </div>
