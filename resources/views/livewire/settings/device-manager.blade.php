@@ -65,6 +65,12 @@
                             <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase {{ $dev->status === 'approved' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : ($dev->status === 'pending' ? 'bg-amber-950 text-amber-400 border border-amber-800' : 'bg-red-950 text-red-400 border border-red-800') }}">
                                 {{ $dev->status }}
                             </span>
+                            @if(isset($currentDeviceId) && $dev->id === $currentDeviceId)
+                                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-blue-950 text-blue-300 border border-blue-700 flex items-center space-x-1">
+                                    <span>💻</span>
+                                    <span>Este Dispositivo (Tú)</span>
+                                </span>
+                            @endif
                         </div>
                         <div class="text-xs text-slate-400 mt-0.5">
                             <span>IP: <strong class="text-slate-300">{{ $dev->ip_address }}</strong></span>
@@ -87,6 +93,9 @@
 
                         @if($dev->status !== 'rejected')
                             <button wire:click="rejectDevice({{ $dev->id }})"
+                                @if(isset($currentDeviceId) && $dev->id === $currentDeviceId)
+                                    wire:confirm="⚠️ ¡ATENCIÓN! Estás a punto de bloquear la PC desde la que estás navegando en este momento. Si lo haces, perderás acceso de inmediato al sistema. ¿Seguro que deseas bloquearte a ti mismo?"
+                                @endif
                                 class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs">
                                 ✕ Bloquear
                             </button>

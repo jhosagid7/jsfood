@@ -73,9 +73,16 @@ class DeviceManager extends Component
     public function render()
     {
         $devices = DeviceAuthorization::orderBy('last_accessed_at', 'desc')->get();
+        $currentUuid = request()->cookie('device_uuid');
+        $currentIp = request()->ip();
+
+        $currentDevice = DeviceAuthorization::where('uuid', $currentUuid)
+            ->orWhere('ip_address', $currentIp)
+            ->first();
 
         return view('livewire.settings.device-manager', [
             'devices' => $devices,
+            'currentDeviceId' => $currentDevice?->id,
         ]);
     }
 }
