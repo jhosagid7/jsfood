@@ -259,5 +259,38 @@
     </script>
 
     @livewireScripts
+    <script>
+        // 1. Interceptar respuestas 403 de Livewire: previene el modal/fondo negro y redirige directo a Dispositivo Bloqueado
+        document.addEventListener('livewire:init', () => {
+            Livewire.hook('request', ({ fail }) => {
+                fail(({ status, preventDefault }) => {
+                    if (status === 403) {
+                        if (typeof preventDefault === 'function') {
+                            preventDefault();
+                        }
+                        window.location.href = "{{ route('access.denied') }}";
+                    }
+                });
+            });
+        });
+
+        // 2. Heartbeat en segundo plano (cada 3.5 segundos):
+        // Tan pronto el administrador bloquea el dispositivo, la pantalla salta automáticamente a "Dispositivo Bloqueado" sin esperar clic ni recarga manual
+        setInterval(() => {
+            fetch("{{ route('device.heartbeat') }}", {
+                method: 'GET',
+                headers: { 
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => {
+                if (response.status === 403) {
+                    window.location.href = "{{ route('access.denied') }}";
+                }
+            })
+            .catch(() => {});
+        }, 3500);
+    </script>
 </body>
 </html>

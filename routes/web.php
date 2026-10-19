@@ -52,4 +52,9 @@ Route::middleware(['auth'])->group(function () {
     // 6. Ajustes de Impresoras y Dispositivos (Ecosistema jspos-sales)
     Route::get('/settings/printers', PrinterSettings::class)->name('settings.printers');
     Route::get('/settings/devices', DeviceManager::class)->name('settings.devices');
+
+    // 7. Heartbeat de Verificación de Dispositivo en Tiempo Real
+    Route::get('/device/heartbeat', function () {
+        return response()->json(['status' => 'authorized']);
+    })->name('device.heartbeat');
 });

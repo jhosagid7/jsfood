@@ -167,13 +167,14 @@ class CheckDeviceAuthorization
                     return response('', 403)->header('X-Livewire-Redirect', route('access.denied', ['device_uuid' => $device->uuid]));
                 }
 
-                if ($request->expectsJson() || $request->is('api/*')) {
+                if ($request->expectsJson() || $request->is('api/*') || $request->ajax() || $request->routeIs('device.heartbeat')) {
                     return response()->json([
                         'message' => 'Dispositivo bloqueado por el administrador.',
                         'device_uuid' => $device->uuid,
                         'status' => 'rejected',
+                        'redirect' => route('access.denied', ['device_uuid' => $device->uuid]),
                         'ip' => $request->ip()
-                    ], 403);
+                    ], 403)->header('X-Livewire-Redirect', route('access.denied', ['device_uuid' => $device->uuid]));
                 }
 
                 return redirect()->route('access.denied', ['device_uuid' => $device->uuid]);
@@ -193,13 +194,14 @@ class CheckDeviceAuthorization
                 return response('', 403)->header('X-Livewire-Redirect', route('access.denied', ['device_uuid' => $device->uuid]));
             }
 
-            if ($request->expectsJson() || $request->is('api/*')) {
+            if ($request->expectsJson() || $request->is('api/*') || $request->ajax() || $request->routeIs('device.heartbeat')) {
                 return response()->json([
                     'message' => 'Dispositivo no autorizado.',
                     'device_uuid' => $device->uuid,
                     'status' => $device->status,
+                    'redirect' => route('access.denied', ['device_uuid' => $device->uuid]),
                     'ip' => $request->ip()
-                ], 403);
+                ], 403)->header('X-Livewire-Redirect', route('access.denied', ['device_uuid' => $device->uuid]));
             }
 
             return redirect()->route('access.denied', ['device_uuid' => $device->uuid]);
