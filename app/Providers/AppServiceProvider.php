@@ -19,7 +19,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Auto-sincronizar APP_URL y raíz con el host del request (para tablets/teléfonos por IP en red local)
+        // 1. Fijar rutas deterministas para Livewire 3 (evita colisiones de hash entre proyectos en Laragon mod_php)
+        try {
+            \Livewire\Livewire::setUpdateRoute(function ($handle) {
+                return \Illuminate\Support\Facades\Route::post('/livewire/update', $handle)->middleware(['web']);
+            });
+            \Livewire\Livewire::setScriptRoute(function ($handle) {
+                return \Illuminate\Support\Facades\Route::get('/livewire/livewire.js', $handle);
+            });
+        } catch (\Throwable $e) {}
+
+        // 2. Auto-sincronizar APP_URL y raíz con el host del request (para tablets/teléfonos por IP en red local)
         try {
             if (!app()->runningInConsole() && isset($_SERVER['HTTP_HOST'])) {
                 $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';

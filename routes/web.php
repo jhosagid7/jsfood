@@ -58,19 +58,37 @@ Route::middleware(['auth'])->group(function () {
         return response()->json(['status' => 'authorized']);
     })->name('device.heartbeat');
 
-    // 8. Estado en Tiempo Real de Cocina (KDS, globo rojo y alertas sonoras)
+    // 8. Estado en Tiempo Real de Cocina y Servicio (KDS, globo rojo y alertas sonoras tanto de entrada a cocina como de platos listos para mesonero)
     Route::get('/kitchen/status', function () {
         $activeKitchenOrders = \App\Models\Order::whereIn('status', ['pending', 'in_kitchen'])
             ->whereHas('items.product', fn($q) => $q->where('send_to_kitchen', true))
             ->select('id', 'order_number')
             ->get();
 
-        $latest = $activeKitchenOrders->sortByDesc('id')->first();
+        $latestKitchen = $activeKitchenOrders->sortByDesc('id')->first();
+
+        // Órdenes listas para servir (para que el mesonero/teléfono escuche cuando la comanda esté lista)
+        $readyOrders = \App\Models\Order::with('diningTable')
+            ->where('status', 'ready')
+            ->select('id', 'order_number', 'table_id', 'kitchen_ready_at')
+            ->get();
+
+        $latestReady = $readyOrders->sortByDesc('kitchen_ready_at')->first();
 
         return response()->json([
             'count' => $activeKitchenOrders->count(),
-            'latest_id' => $latest ? $latest->id : 0,
-            'latest_order_number' => $latest ? $latest->order_number : null,
+            'latest_id' => $latestKitchen ? $latestKitchen->id : 0,
+            'latest_order_number' => $latestKitchen ? $latestKitchen->order_number : null,
+            'ready_count' => $readyOrders->count(),
+            'latest_ready_id' => $latestReady ? $latestReady->id : 0,
+            'latest_ready_order_number' => $latestReady ? $latestReady->order_number : null,
+            'latest_ready_table' => $latestReady && $latestReady->diningTable ? $latestReady->diningTable->name : 'Para Llevar',
         ]);
     })->name('kitchen.status');
 });
+
+// 9. Enrutamiento determinista y resiliente para Livewire 3 (evita 404 por desincronización de hash o caché de navegador)
+Route::post('/livewire/update', [\Livewire\Mechanisms\HandleRequests\HandleRequests::class, 'handleUpdate'])->middleware(['web']);
+Route::get('/livewire/livewire.js', [\Livewire\Mechanisms\FrontendAssets\FrontendAssets::class, 'returnJavaScriptAsFile']);
+Route::post('/livewire-{hash}/update', [\Livewire\Mechanisms\HandleRequests\HandleRequests::class, 'handleUpdate'])->middleware(['web']);
+Route::get('/livewire-{hash}/livewire.js', [\Livewire\Mechanisms\FrontendAssets\FrontendAssets::class, 'returnJavaScriptAsFile']);

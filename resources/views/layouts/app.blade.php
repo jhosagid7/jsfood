@@ -21,8 +21,9 @@
         ->get();
     $inKitchenCount = $activeKitchenOrders->count();
     $initialLatestKitchenId = $activeKitchenOrders->max('id') ?? 0;
+    $initialLatestReadyId = \App\Models\Order::where('status', 'ready')->max('id') ?? 0;
 @endphp
-<body x-data="kitchenGlobalTracker({{ $inKitchenCount }}, {{ $initialLatestKitchenId }})" class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100 selection:bg-amber-500 selection:text-white">
+<body x-data="kitchenGlobalTracker({{ $inKitchenCount }}, {{ $initialLatestKitchenId }}, {{ $initialLatestReadyId }})" class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100 selection:bg-amber-500 selection:text-white">
 
     <!-- Header / Navbar Principal -->
     <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-md">
@@ -105,16 +106,19 @@
                                 this.enabled = !this.enabled;
                                 if (window.JSFoodAudio) {
                                     window.JSFoodAudio.enabled = this.enabled;
-                                    if (this.enabled) window.JSFoodAudio.playWaiterChime();
+                                    if (this.enabled) {
+                                        window.JSFoodAudio.init();
+                                        window.JSFoodAudio.playKitchenChime();
+                                    }
                                 }
                             }
                         }"
                         @click="toggle()"
                         :title="enabled ? 'Sonido de alertas activado (clic para silenciar)' : 'Sonido silenciado (clic para activar)'"
-                        class="p-2 rounded-xl border transition-all text-xs flex items-center space-x-1.5"
+                        class="p-2 rounded-xl border transition-all text-xs flex items-center space-x-1.5 cursor-pointer"
                         :class="enabled ? 'bg-amber-500/15 border-amber-500/40 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-500'">
                         <span x-text="enabled ? '🔔' : '🔕'"></span>
-                        <span class="hidden xl:inline text-[11px] font-bold" x-text="enabled ? 'Sonido ON' : 'Sonido OFF'"></span>
+                        <span class="hidden sm:inline text-[11px] font-bold" x-text="enabled ? 'Sonido ON' : 'Sonido OFF'"></span>
                     </button>
 
                     <form method="POST" action="{{ route('logout') }}" class="inline">
@@ -197,12 +201,90 @@
         </template>
     </div>
 
-    <!-- Motor de Audio Sintetizado Web Audio API (Offline & Confiable) -->
+    <!-- Motor de Audio Dual: HTML5 Audio con WAV Sintetizado + Web Audio API (100% Funcional en Móviles y PC) -->
     <script>
+        // Generador en memoria de sonidos WAV (PCM 16-bit) para reproducción nativa inmediata en teléfonos
+        function generateWavBlobUrl(tones) {
+            try {
+                const sampleRate = 22050;
+                let totalDuration = 0;
+                tones.forEach(t => { totalDuration = Math.max(totalDuration, t.start + t.dur); });
+                const numSamples = Math.ceil(totalDuration * sampleRate);
+                const buffer = new Int16Array(numSamples);
+
+                tones.forEach(t => {
+                    const startSample = Math.floor(t.start * sampleRate);
+                    const endSample = Math.min(numSamples, Math.floor((t.start + t.dur) * sampleRate));
+                    const decay = t.decay || 5.0;
+                    const vol = t.vol || 0.8;
+                    for (let i = startSample; i < endSample; i++) {
+                        const time = (i - startSample) / sampleRate;
+                        const envelope = Math.exp(-time * decay);
+                        const sample = Math.sin(2 * Math.PI * t.freq * time) * envelope * vol;
+                        buffer[i] = Math.max(-32767, Math.min(32767, buffer[i] + sample * 32767));
+                    }
+                });
+
+                const dataSize = numSamples * 2;
+                const fileSize = 36 + dataSize;
+                const header = new ArrayBuffer(44);
+                const view = new DataView(header);
+                view.setUint32(0, 0x52494646, false); // "RIFF"
+                view.setUint32(4, fileSize, true);
+                view.setUint32(8, 0x57415645, false); // "WAVE"
+                view.setUint32(12, 0x666d7420, false); // "fmt "
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true); // PCM
+                view.setUint16(22, 1, true); // Mono
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, sampleRate * 2, true);
+                view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true);
+                view.setUint32(36, 0x64617461, false); // "data"
+                view.setUint32(40, dataSize, true);
+
+                const blob = new Blob([header, buffer], { type: 'audio/wav' });
+                return URL.createObjectURL(blob);
+            } catch (e) {
+                return null;
+            }
+        }
+
         window.JSFoodAudio = {
             ctx: null,
             enabled: true,
+            kitchenWavUrl: null,
+            waiterWavUrl: null,
+            audioElKitchen: null,
+            audioElWaiter: null,
+            unlocked: false,
+
             init() {
+                // 1. Inicializar elementos de audio HTML5 pre-generados
+                if (!this.kitchenWavUrl) {
+                    this.kitchenWavUrl = generateWavBlobUrl([
+                        { freq: 880, start: 0, dur: 0.35, decay: 4.5, vol: 0.9 },
+                        { freq: 1320, start: 0.16, dur: 0.65, decay: 3.8, vol: 0.95 }
+                    ]);
+                    if (this.kitchenWavUrl) {
+                        this.audioElKitchen = new Audio(this.kitchenWavUrl);
+                        this.audioElKitchen.preload = 'auto';
+                    }
+                }
+
+                if (!this.waiterWavUrl) {
+                    this.waiterWavUrl = generateWavBlobUrl([
+                        { freq: 587.33, start: 0, dur: 0.25, decay: 5.0, vol: 0.8 },
+                        { freq: 880, start: 0.12, dur: 0.28, decay: 4.5, vol: 0.85 },
+                        { freq: 1174.66, start: 0.26, dur: 0.65, decay: 3.5, vol: 0.95 }
+                    ]);
+                    if (this.waiterWavUrl) {
+                        this.audioElWaiter = new Audio(this.waiterWavUrl);
+                        this.audioElWaiter.preload = 'auto';
+                    }
+                }
+
+                // 2. Inicializar Web Audio API
                 if (!this.ctx) {
                     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                     if (AudioContextClass) {
@@ -210,53 +292,105 @@
                     }
                 }
                 if (this.ctx && this.ctx.state === 'suspended') {
-                    this.ctx.resume();
+                    this.ctx.resume().catch(() => {});
+                }
+
+                // 3. Desbloquear permisos de audio en móviles (dummy play)
+                if (!this.unlocked) {
+                    if (this.audioElKitchen) {
+                        this.audioElKitchen.volume = 0.01;
+                        this.audioElKitchen.play()
+                            .then(() => {
+                                this.audioElKitchen.pause();
+                                this.audioElKitchen.currentTime = 0;
+                                this.audioElKitchen.volume = 1.0;
+                                this.unlocked = true;
+                            })
+                            .catch(() => {});
+                    }
                 }
             },
+
             playKitchenChime() {
+                if (!this.enabled) return;
                 this.init();
-                if (!this.ctx || !this.enabled) return;
 
-                const playSound = () => {
-                    const now = this.ctx.currentTime;
-                    // Doble campana brillante y potente para cocina (880Hz y 1320Hz)
-                    [ { freq: 880, start: 0, dur: 0.35, gain: 0.6 }, { freq: 1320, start: 0.16, dur: 0.65, gain: 0.6 } ].forEach(tone => {
-                        const osc = this.ctx.createOscillator();
-                        const gain = this.ctx.createGain();
-                        osc.type = 'triangle';
-                        osc.frequency.setValueAtTime(tone.freq, now + tone.start);
-                        gain.gain.setValueAtTime(tone.gain, now + tone.start);
-                        gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
-                        osc.connect(gain);
-                        gain.connect(this.ctx.destination);
-                        osc.start(now + tone.start);
-                        osc.stop(now + tone.start + tone.dur);
-                    });
-                };
+                // Intentar reproducir con elemento HTML5 Audio (más confiable en teléfonos móviles)
+                let playedHtml5 = false;
+                if (this.audioElKitchen) {
+                    try {
+                        this.audioElKitchen.currentTime = 0;
+                        this.audioElKitchen.volume = 1.0;
+                        const p = this.audioElKitchen.play();
+                        if (p && typeof p.then === 'function') {
+                            p.then(() => { playedHtml5 = true; }).catch(() => {});
+                        }
+                    } catch(e) {}
+                }
 
-                if (this.ctx.state === 'suspended') {
-                    this.ctx.resume().then(() => playSound()).catch(() => {});
-                } else {
-                    playSound();
+                // Motor secundario Web Audio API (Osciladores)
+                if (this.ctx) {
+                    const playOsc = () => {
+                        const now = this.ctx.currentTime;
+                        [ { freq: 880, start: 0, dur: 0.35, gain: 0.7 }, { freq: 1320, start: 0.16, dur: 0.65, gain: 0.75 } ].forEach(tone => {
+                            const osc = this.ctx.createOscillator();
+                            const gain = this.ctx.createGain();
+                            osc.type = 'triangle';
+                            osc.frequency.setValueAtTime(tone.freq, now + tone.start);
+                            gain.gain.setValueAtTime(tone.gain, now + tone.start);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
+                            osc.connect(gain);
+                            gain.connect(this.ctx.destination);
+                            osc.start(now + tone.start);
+                            osc.stop(now + tone.start + tone.dur);
+                        });
+                    };
+
+                    if (this.ctx.state === 'suspended') {
+                        this.ctx.resume().then(() => playOsc()).catch(() => {});
+                    } else {
+                        playOsc();
+                    }
                 }
             },
+
             playWaiterChime() {
+                if (!this.enabled) return;
                 this.init();
-                if (!this.ctx || !this.enabled) return;
-                const now = this.ctx.currentTime;
-                // Timbre de servicio para mesonero (3 tonos armoniosos: 587Hz -> 880Hz -> 1174Hz)
-                [ { freq: 587.33, start: 0, dur: 0.25 }, { freq: 880, start: 0.12, dur: 0.28 }, { freq: 1174.66, start: 0.26, dur: 0.6 } ].forEach(tone => {
-                    const osc = this.ctx.createOscillator();
-                    const gain = this.ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(tone.freq, now + tone.start);
-                    gain.gain.setValueAtTime(0.45, now + tone.start);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
-                    osc.connect(gain);
-                    gain.connect(this.ctx.destination);
-                    osc.start(now + tone.start);
-                    osc.stop(now + tone.start + tone.dur);
-                });
+
+                // Intentar reproducir con elemento HTML5 Audio
+                if (this.audioElWaiter) {
+                    try {
+                        this.audioElWaiter.currentTime = 0;
+                        this.audioElWaiter.volume = 1.0;
+                        this.audioElWaiter.play().catch(() => {});
+                    } catch(e) {}
+                }
+
+                // Motor secundario Web Audio API (Osciladores)
+                if (this.ctx) {
+                    const playOsc = () => {
+                        const now = this.ctx.currentTime;
+                        [ { freq: 587.33, start: 0, dur: 0.25, gain: 0.6 }, { freq: 880, start: 0.12, dur: 0.28, gain: 0.65 }, { freq: 1174.66, start: 0.26, dur: 0.65, gain: 0.75 } ].forEach(tone => {
+                            const osc = this.ctx.createOscillator();
+                            const gain = this.ctx.createGain();
+                            osc.type = 'sine';
+                            osc.frequency.setValueAtTime(tone.freq, now + tone.start);
+                            gain.gain.setValueAtTime(tone.gain, now + tone.start);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
+                            osc.connect(gain);
+                            gain.connect(this.ctx.destination);
+                            osc.start(now + tone.start);
+                            osc.stop(now + tone.start + tone.dur);
+                        });
+                    };
+
+                    if (this.ctx.state === 'suspended') {
+                        this.ctx.resume().then(() => playOsc()).catch(() => {});
+                    } else {
+                        playOsc();
+                    }
+                }
             }
         };
 
@@ -268,19 +402,24 @@
             window.JSFoodAudio.playWaiterChime();
         });
 
-        // Desbloquear audio con el primer toque o interacción del usuario
+        // Desbloquear audio ante cualquier interacción táctil o clic
         const unlockAudio = () => {
             if (window.JSFoodAudio) window.JSFoodAudio.init();
-            ['click', 'touchstart', 'keydown'].forEach(evt => document.removeEventListener(evt, unlockAudio));
         };
-        ['click', 'touchstart', 'keydown'].forEach(evt => document.addEventListener(evt, unlockAudio, { once: true }));
+        ['click', 'touchstart', 'touchend', 'pointerdown', 'keydown'].forEach(evt => {
+            document.addEventListener(evt, unlockAudio, { passive: true });
+        });
 
-        // Tracker Global en Tiempo Real para Cocina (KDS, globo rojo y alarma sonora)
-        function kitchenGlobalTracker(initialCount, initialLatestId) {
+        // Tracker Global en Tiempo Real para Cocina y Mesonero (KDS, globo rojo y alarma sonora)
+        function kitchenGlobalTracker(initialCount, initialLatestId, initialReadyId) {
             return {
                 kitchenCount: initialCount || 0,
                 lastSeenKitchenOrderId: initialLatestId || 0,
+                lastSeenReadyOrderId: initialReadyId || 0,
                 init() {
+                    // Inicializar motor de audio
+                    if (window.JSFoodAudio) window.JSFoodAudio.init();
+
                     // Consultar en segundo plano cada 2.5 segundos
                     setInterval(() => {
                         this.pollKitchenStatus();
@@ -296,13 +435,13 @@
                     .then(res => res.json())
                     .then(data => {
                         this.kitchenCount = data.count;
+
+                        // 1. Alerta: Nueva comanda recibida para preparar en cocina
                         if (data.latest_id && data.latest_id > this.lastSeenKitchenOrderId) {
                             if (this.lastSeenKitchenOrderId > 0) {
-                                // 1. Alarma sonora inmediata de cocina
                                 if (window.JSFoodAudio) {
                                     window.JSFoodAudio.playKitchenChime();
                                 }
-                                // 2. Notificación toast flotante
                                 const orderRef = data.latest_order_number ? ' #' + data.latest_order_number : '';
                                 window.dispatchEvent(new CustomEvent('notify', {
                                     detail: {
@@ -312,6 +451,24 @@
                                 }));
                             }
                             this.lastSeenKitchenOrderId = data.latest_id;
+                        }
+
+                        // 2. Alerta: Comanda lista para servir (para el mesonero en su teléfono / tablet)
+                        if (data.latest_ready_id && data.latest_ready_id > this.lastSeenReadyOrderId) {
+                            if (this.lastSeenReadyOrderId > 0) {
+                                if (window.JSFoodAudio) {
+                                    window.JSFoodAudio.playWaiterChime();
+                                }
+                                const tableInfo = data.latest_ready_table ? ' (' + data.latest_ready_table + ')' : '';
+                                const orderRef = data.latest_ready_order_number ? ' #' + data.latest_ready_order_number : '';
+                                window.dispatchEvent(new CustomEvent('notify', {
+                                    detail: {
+                                        message: '🍽️ ¡Comanda lista para servir' + orderRef + tableInfo + '!',
+                                        type: 'success'
+                                    }
+                                }));
+                            }
+                            this.lastSeenReadyOrderId = data.latest_ready_id;
                         }
                     })
                     .catch(() => {});

@@ -332,5 +332,15 @@ class ProductAndCategoryManagementTest extends TestCase
         $this->assertEquals(1, $res2->json('count'));
         $this->assertEquals($kitchenOrder->id, $res2->json('latest_id'));
         $this->assertEquals('ORD-WOK-01', $res2->json('latest_order_number'));
+
+        // Orden lista para servir -> Debe notificarse al mesonero/teléfono
+        $kitchenOrder->update(['status' => 'ready', 'kitchen_ready_at' => now()]);
+
+        $res3 = $this->actingAs($this->adminUser)->getJson(route('kitchen.status'));
+        $res3->assertOk();
+        $this->assertEquals(0, $res3->json('count')); // Ya salió de preparación
+        $this->assertEquals(1, $res3->json('ready_count')); // Lista para llevar a la mesa
+        $this->assertEquals($kitchenOrder->id, $res3->json('latest_ready_id'));
+        $this->assertEquals('ORD-WOK-01', $res3->json('latest_ready_order_number'));
     }
 }

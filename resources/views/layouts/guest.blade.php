@@ -22,5 +22,22 @@
     </main>
 
     @livewireScripts
+    <script>
+        // Interceptar respuestas de error de Livewire: previene el modal/iframe 404 en el login
+        document.addEventListener('livewire:init', () => {
+            Livewire.hook('request', ({ fail }) => {
+                fail(({ status, preventDefault }) => {
+                    if (status === 419) {
+                        if (typeof preventDefault === 'function') preventDefault();
+                        window.location.reload();
+                        return;
+                    }
+                    if (typeof preventDefault === 'function') {
+                        preventDefault();
+                    }
+                });
+            });
+        });
+    </script>
 </body>
 </html>
