@@ -484,12 +484,12 @@
                                 <label class="block text-xs font-bold text-slate-300 uppercase">Monto a Cobrar / Abonar:</label>
                                 <span class="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">{{ $currName }}</span>
                             </div>
-                            <div class="relative">
-                                <span class="absolute inset-y-0 left-0 pl-3 flex items-center font-black text-amber-400 text-sm">
+                            <div class="flex rounded-xl overflow-hidden border border-slate-800 bg-slate-900 focus-within:ring-2 focus-within:ring-amber-500 focus-within:border-amber-500 transition-all shadow-inner">
+                                <span class="inline-flex items-center justify-center px-3 bg-slate-800/80 text-amber-400 font-black text-sm border-r border-slate-800 shrink-0 select-none">
                                     {{ $currSym }}
                                 </span>
                                 <input type="number" step="0.01" wire:model.live="amountReceived"
-                                    class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-3 py-2 text-base font-black text-amber-400 focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono">
+                                    class="w-full bg-transparent border-0 px-3 py-2 text-base font-black text-amber-400 focus:ring-0 focus:outline-none font-mono">
                             </div>
                             @if($currSym !== '$')
                                 @php

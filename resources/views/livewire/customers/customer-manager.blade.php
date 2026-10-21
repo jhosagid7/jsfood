@@ -514,12 +514,12 @@
                             @endif
                         </div>
 
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center font-black text-amber-400 text-sm">
+                        <div class="flex rounded-xl overflow-hidden border border-slate-700 bg-slate-900 focus-within:ring-2 focus-within:ring-amber-500 focus-within:border-amber-500 transition-all shadow-inner">
+                            <span class="inline-flex items-center justify-center px-3.5 bg-slate-800/80 text-amber-400 font-black text-sm border-r border-slate-700 shrink-0 select-none">
                                 {{ $currSym }}
                             </span>
                             <input type="number" step="0.01" min="0.01" wire:model.live="abonoAmountCurrency"
-                                class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-12 pr-3 py-2 text-base text-white font-black focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono">
+                                class="w-full bg-transparent border-0 px-3 py-2 text-base text-white font-black focus:ring-0 focus:outline-none font-mono">
                         </div>
 
                         <!-- Equivalencia en USD -->
