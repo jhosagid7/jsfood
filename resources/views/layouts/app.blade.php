@@ -322,7 +322,7 @@
 
     @livewireScripts
     <script>
-        // 1. Interceptar respuestas 403 de Livewire: previene el modal/fondo negro y redirige directo a Dispositivo Bloqueado
+        // 1. Interceptar respuestas de error de Livewire: previene el modal/iframe invasivo en pantalla
         document.addEventListener('livewire:init', () => {
             Livewire.hook('request', ({ fail }) => {
                 fail(({ status, preventDefault }) => {
@@ -331,6 +331,21 @@
                             preventDefault();
                         }
                         window.location.href = "{{ route('access.denied') }}";
+                        return;
+                    }
+
+                    if (status === 419) {
+                        // Sesión expirada o token CSRF desincronizado: recargar limpiamente sin mostrar modal
+                        if (typeof preventDefault === 'function') {
+                            preventDefault();
+                        }
+                        window.location.reload();
+                        return;
+                    }
+
+                    // Prevenir que Livewire monte un iframe modal oscuro (404/500) ante micro-cortes o desincronizaciones de polling
+                    if (typeof preventDefault === 'function') {
+                        preventDefault();
                     }
                 });
             });
