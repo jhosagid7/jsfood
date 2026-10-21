@@ -11,7 +11,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Respaldo de seguridad contra desincronización de variables de entorno en servidores locales (Laragon mod_php)
+        if (empty(config('app.key'))) {
+            config(['app.key' => 'base64:ih9ogwJWXyPZujm5eU4JrHQ67jpPvy6gYb9aq3dB7Ko=']);
+        }
     }
 
     /**
