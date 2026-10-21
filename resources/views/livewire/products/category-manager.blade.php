@@ -59,8 +59,12 @@
                 
                 <div class="flex items-start justify-between">
                     <div class="flex items-center space-x-3">
-                        <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border {{ $colorClasses }}">
-                            {{ $cat->icon ?: '🍽️' }}
+                        <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border overflow-hidden {{ $colorClasses }}">
+                            @if($cat->image && file_exists(public_path('storage/' . $cat->image)))
+                                <img src="{{ asset('storage/' . $cat->image) }}" alt="{{ $cat->name }}" class="w-full h-full object-cover">
+                            @else
+                                <span>{{ $cat->icon ?: '🍽️' }}</span>
+                            @endif
                         </div>
                         <div>
                             <h3 class="text-base font-black text-white group-hover:text-amber-400 transition-colors">
@@ -144,7 +148,7 @@
                             <span class="text-[11px] text-slate-400">Elige un emoji o escribe uno.</span>
                         </div>
                         <div class="flex flex-wrap gap-1.5 p-2 bg-slate-950/60 rounded-xl border border-slate-800/80">
-                            @foreach(['🍔', '🍕', '🥩', '🍟', '🌮', '🥗', '🍰', '🍺', '🥤', '☕', '🍹', '🍣', '🍦', '🍱', '🥪'] as $e)
+                            @foreach(['🍔', '🍚', '🥘', '🥤', '🍾', '🍕', '🥩', '🌭', '🍟', '🌮', '🥗', '🍰', '🍺', '☕', '🍹', '🍣', '🍦', '🍱', '🥪'] as $e)
                                 <button type="button" wire:click="$set('icon', '{{ $e }}')"
                                     class="w-8 h-8 rounded-lg flex items-center justify-center text-base hover:bg-slate-800 transition-colors {{ $icon === $e ? 'bg-amber-500/20 border border-amber-500/40' : '' }}">
                                     {{ $e }}
@@ -152,6 +156,28 @@
                             @endforeach
                         </div>
                         @error('icon') <span class="text-[11px] text-red-400 mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
+                    <!-- Foto / Imagen Destacada de la Categoría -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Foto / Imagen Destacada:</label>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-16 h-16 rounded-xl border border-slate-800 bg-slate-950 flex items-center justify-center overflow-hidden shrink-0">
+                                @if($image)
+                                    <img src="{{ $image->temporaryUrl() }}" class="w-full h-full object-cover">
+                                @elseif($existingImage && file_exists(public_path('storage/' . $existingImage)))
+                                    <img src="{{ asset('storage/' . $existingImage) }}" class="w-full h-full object-cover">
+                                @else
+                                    <span class="text-2xl">{{ $icon ?: '🍽️' }}</span>
+                                @endif
+                            </div>
+                            <div class="flex-1">
+                                <input type="file" wire:model="image" accept="image/*"
+                                    class="text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700">
+                                <span class="text-[10px] text-slate-500 block mt-1">Formatos JPG, PNG, WEBP (máx. 3MB). Opcional.</span>
+                            </div>
+                        </div>
+                        @error('image') <span class="text-[11px] text-red-400 mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <!-- Color de la Tarjeta / Botón en Terminal Táctil -->

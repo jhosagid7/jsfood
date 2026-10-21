@@ -1,4 +1,4 @@
-<div class="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-3 sm:py-5" wire:poll.5s="checkNewOrders">
+<div class="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-3 sm:py-5" wire:poll.2s="checkNewOrders">
 
     <!-- Barra Superior de Control KDS -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 bg-slate-900 border border-slate-800 p-3 sm:p-4 rounded-2xl shadow-md">
@@ -91,7 +91,7 @@
 
                 <!-- Detalle de Platos a Preparar -->
                 <div class="p-4 flex-1 space-y-3 overflow-y-auto max-h-72">
-                    @foreach($order->items->filter(fn($i) => $i->product ? (bool)$i->product->send_to_kitchen : true) as $item)
+                    @foreach($order->items->filter(fn($i) => $i->product ? (bool)$i->product->send_to_kitchen : false) as $item)
                         <div class="bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/80 space-y-1">
                             <div class="flex items-start space-x-2">
                                 <span class="w-7 h-7 rounded-lg bg-amber-500 text-slate-950 font-black text-sm flex items-center justify-center shrink-0">

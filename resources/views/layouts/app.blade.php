@@ -14,7 +14,15 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
-<body class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100 selection:bg-amber-500 selection:text-white">
+@php
+    $activeKitchenOrders = \App\Models\Order::whereIn('status', ['pending', 'in_kitchen'])
+        ->whereHas('items.product', fn($q) => $q->where('send_to_kitchen', true))
+        ->select('id')
+        ->get();
+    $inKitchenCount = $activeKitchenOrders->count();
+    $initialLatestKitchenId = $activeKitchenOrders->max('id') ?? 0;
+@endphp
+<body x-data="kitchenGlobalTracker({{ $inKitchenCount }}, {{ $initialLatestKitchenId }})" class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100 selection:bg-amber-500 selection:text-white">
 
     <!-- Header / Navbar Principal -->
     <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-md">
@@ -57,12 +65,10 @@
                     </a>
                     <a href="{{ url('/kds') }}" class="px-3 py-2 rounded-lg text-sm font-semibold transition-colors relative {{ request()->is('kds*') ? 'bg-amber-500 text-slate-950 font-bold shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
                         🍳 Cocina (KDS)
-                        @php
-                            $inKitchenCount = \App\Models\Order::where('status', 'in_kitchen')->count();
-                        @endphp
-                        @if($inKitchenCount > 0)
-                            <span class="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full animate-pulse">{{ $inKitchenCount }}</span>
-                        @endif
+                        <span x-cloak x-show="kitchenCount > 0" x-text="kitchenCount"
+                            class="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full animate-pulse shadow-md">
+                            {{ $inKitchenCount > 0 ? $inKitchenCount : '' }}
+                        </span>
                     </a>
                     <a href="{{ url('/cashier') }}" class="px-3 py-2 rounded-lg text-sm font-semibold transition-colors {{ request()->is('cashier*') ? 'bg-amber-500 text-slate-950 font-bold shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
                         💳 Caja & Cobro
@@ -144,9 +150,10 @@
         <a href="{{ url('/kds') }}" class="flex flex-col items-center py-1 px-2 rounded-lg text-xs relative {{ request()->is('kds*') ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200' }}">
             <span class="text-lg">🍳</span>
             <span>Cocina</span>
-            @if(isset($inKitchenCount) && $inKitchenCount > 0)
-                <span class="absolute top-0 right-1 bg-red-600 text-white text-[9px] font-bold px-1 rounded-full">{{ $inKitchenCount }}</span>
-            @endif
+            <span x-cloak x-show="kitchenCount > 0" x-text="kitchenCount"
+                class="absolute top-0 right-1 bg-red-600 text-white text-[9px] font-bold px-1 rounded-full animate-pulse shadow">
+                {{ $inKitchenCount > 0 ? $inKitchenCount : '' }}
+            </span>
         </a>
         <a href="{{ url('/cashier') }}" class="flex flex-col items-center py-1 px-2 rounded-lg text-xs {{ request()->is('cashier*') ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200' }}">
             <span class="text-lg">💳</span>
@@ -209,20 +216,29 @@
             playKitchenChime() {
                 this.init();
                 if (!this.ctx || !this.enabled) return;
-                const now = this.ctx.currentTime;
-                // Doble campana brillante para cocina (880Hz y 1320Hz)
-                [ { freq: 880, start: 0, dur: 0.3 }, { freq: 1320, start: 0.14, dur: 0.55 } ].forEach(tone => {
-                    const osc = this.ctx.createOscillator();
-                    const gain = this.ctx.createGain();
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(tone.freq, now + tone.start);
-                    gain.gain.setValueAtTime(0.4, now + tone.start);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
-                    osc.connect(gain);
-                    gain.connect(this.ctx.destination);
-                    osc.start(now + tone.start);
-                    osc.stop(now + tone.start + tone.dur);
-                });
+
+                const playSound = () => {
+                    const now = this.ctx.currentTime;
+                    // Doble campana brillante y potente para cocina (880Hz y 1320Hz)
+                    [ { freq: 880, start: 0, dur: 0.35, gain: 0.6 }, { freq: 1320, start: 0.16, dur: 0.65, gain: 0.6 } ].forEach(tone => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(tone.freq, now + tone.start);
+                        gain.gain.setValueAtTime(tone.gain, now + tone.start);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start(now + tone.start);
+                        osc.stop(now + tone.start + tone.dur);
+                    });
+                };
+
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume().then(() => playSound()).catch(() => {});
+                } else {
+                    playSound();
+                }
             },
             playWaiterChime() {
                 this.init();
@@ -252,10 +268,56 @@
             window.JSFoodAudio.playWaiterChime();
         });
 
-        // Desbloquear audio con el primer toque o clic del usuario
-        document.addEventListener('click', () => {
+        // Desbloquear audio con el primer toque o interacción del usuario
+        const unlockAudio = () => {
             if (window.JSFoodAudio) window.JSFoodAudio.init();
-        }, { once: true });
+            ['click', 'touchstart', 'keydown'].forEach(evt => document.removeEventListener(evt, unlockAudio));
+        };
+        ['click', 'touchstart', 'keydown'].forEach(evt => document.addEventListener(evt, unlockAudio, { once: true }));
+
+        // Tracker Global en Tiempo Real para Cocina (KDS, globo rojo y alarma sonora)
+        function kitchenGlobalTracker(initialCount, initialLatestId) {
+            return {
+                kitchenCount: initialCount || 0,
+                lastSeenKitchenOrderId: initialLatestId || 0,
+                init() {
+                    // Consultar en segundo plano cada 2.5 segundos
+                    setInterval(() => {
+                        this.pollKitchenStatus();
+                    }, 2500);
+                },
+                pollKitchenStatus() {
+                    fetch("{{ route('kitchen.status') }}", {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        this.kitchenCount = data.count;
+                        if (data.latest_id && data.latest_id > this.lastSeenKitchenOrderId) {
+                            if (this.lastSeenKitchenOrderId > 0) {
+                                // 1. Alarma sonora inmediata de cocina
+                                if (window.JSFoodAudio) {
+                                    window.JSFoodAudio.playKitchenChime();
+                                }
+                                // 2. Notificación toast flotante
+                                const orderRef = data.latest_order_number ? ' #' + data.latest_order_number : '';
+                                window.dispatchEvent(new CustomEvent('notify', {
+                                    detail: {
+                                        message: '🔔 ¡Nueva comanda recibida en cocina' + orderRef + '!',
+                                        type: 'warning'
+                                    }
+                                }));
+                            }
+                            this.lastSeenKitchenOrderId = data.latest_id;
+                        }
+                    })
+                    .catch(() => {});
+                }
+            };
+        }
     </script>
 
     @livewireScripts

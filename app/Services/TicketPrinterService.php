@@ -66,9 +66,9 @@ class TicketPrinterService
         // Solo ítems que requieran preparación en cocina (excluir refrescos/bebidas directas que no van a cocina)
         $kitchenItems = $order->items->filter(function ($item) {
             if (!$item->product) {
-                return true;
+                return false;
             }
-            return (bool) ($item->product->send_to_kitchen ?? true);
+            return (bool) ($item->product->send_to_kitchen ?? ($item->product->type === 'dish'));
         });
 
         if ($kitchenItems->isEmpty()) {

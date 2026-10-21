@@ -23,6 +23,15 @@ class Product extends Model
         'min_stock' => 'float',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function ($product) {
+            if ($product->send_to_kitchen === null) {
+                $product->send_to_kitchen = ($product->type === 'dish');
+            }
+        });
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);

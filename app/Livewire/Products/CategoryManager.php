@@ -3,6 +3,7 @@
 namespace App\Livewire\Products;
 
 use Livewire\Component;
+use Livewire\WithFileUploads;
 use App\Models\Category;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
@@ -10,11 +11,15 @@ use Livewire\Attributes\Layout;
 #[Layout('layouts.app')]
 class CategoryManager extends Component
 {
+    use WithFileUploads;
+
     public bool $showModal = false;
     public ?int $editingCategoryId = null;
 
     public string $name = '';
     public string $icon = '🍔';
+    public $image = null;
+    public ?string $existingImage = null;
     public string $color = 'amber';
     public int $sortOrder = 0;
     public bool $isActive = true;
@@ -26,6 +31,7 @@ class CategoryManager extends Component
         return [
             'name' => 'required|min:2|max:100',
             'icon' => 'nullable|string|max:50',
+            'image' => 'nullable|image|max:3072',
             'color' => 'required|string|max:30',
             'sortOrder' => 'required|integer|min:0',
             'isActive' => 'boolean',
@@ -34,7 +40,7 @@ class CategoryManager extends Component
 
     public function openCreateModal(): void
     {
-        $this->reset(['name', 'icon', 'color', 'sortOrder', 'isActive', 'editingCategoryId']);
+        $this->reset(['name', 'icon', 'image', 'existingImage', 'color', 'sortOrder', 'isActive', 'editingCategoryId']);
         $this->icon = '🍔';
         $this->color = 'amber';
         $this->sortOrder = Category::max('sort_order') + 1;
@@ -48,6 +54,8 @@ class CategoryManager extends Component
         $this->editingCategoryId = $cat->id;
         $this->name = $cat->name;
         $this->icon = $cat->icon ?? '🍔';
+        $this->existingImage = $cat->image;
+        $this->image = null;
         $this->color = $cat->color ?? 'amber';
         $this->sortOrder = $cat->sort_order;
         $this->isActive = (bool) $cat->is_active;
@@ -69,12 +77,18 @@ class CategoryManager extends Component
             $counter++;
         }
 
+        $imagePath = $this->existingImage;
+        if ($this->image) {
+            $imagePath = $this->image->store('categories', 'public');
+        }
+
         if ($this->editingCategoryId) {
             $category = Category::findOrFail($this->editingCategoryId);
             $category->update([
                 'name' => trim($this->name),
                 'slug' => $slug,
                 'icon' => trim($this->icon) ?: '🍔',
+                'image' => $imagePath,
                 'color' => $this->color,
                 'sort_order' => $this->sortOrder,
                 'is_active' => $this->isActive,
@@ -85,6 +99,7 @@ class CategoryManager extends Component
                 'name' => trim($this->name),
                 'slug' => $slug,
                 'icon' => trim($this->icon) ?: '🍔',
+                'image' => $imagePath,
                 'color' => $this->color,
                 'sort_order' => $this->sortOrder,
                 'is_active' => $this->isActive,
@@ -93,7 +108,7 @@ class CategoryManager extends Component
         }
 
         $this->showModal = false;
-        $this->reset(['name', 'icon', 'color', 'sortOrder', 'isActive', 'editingCategoryId']);
+        $this->reset(['name', 'icon', 'image', 'existingImage', 'color', 'sortOrder', 'isActive', 'editingCategoryId']);
     }
 
     public function toggleStatus(int $id): void

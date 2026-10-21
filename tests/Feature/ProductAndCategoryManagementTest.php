@@ -280,4 +280,57 @@ class ProductAndCategoryManagementTest extends TestCase
             ->assertDontSee('ORD-2002')
             ->assertDontSee('Agua Nevada');
     }
+
+    public function test_kitchen_status_endpoint_returns_realtime_counts_and_ignores_drinks_only_orders(): void
+    {
+        $area = Area::first() ?? Area::create(['name' => 'Salón Principal']);
+        $table = Table::first() ?? Table::create(['area_id' => $area->id, 'name' => 'Mesa 1', 'capacity' => 4, 'status' => 'available']);
+
+        $dish = Product::create([
+            'name' => 'Arroz Chino Especial al Wok',
+            'price_usd' => 7.00,
+            'type' => 'dish',
+            'send_to_kitchen' => true,
+            'unit' => 'unit',
+        ]);
+
+        $drink = Product::create([
+            'name' => 'Coca-Cola 355ml Lata',
+            'price_usd' => 1.50,
+            'type' => 'direct',
+            'send_to_kitchen' => false,
+            'unit' => 'unit',
+        ]);
+
+        // Orden de solo bebidas directas -> No debe aumentar contador de cocina
+        $drinkOrder = Order::create([
+            'order_number' => 'ORD-DRINK-ONLY',
+            'dining_table_id' => $table->id,
+            'user_id' => $this->adminUser->id,
+            'status' => 'pending',
+            'total_usd' => 3.00,
+        ]);
+        OrderItem::create(['order_id' => $drinkOrder->id, 'product_id' => $drink->id, 'quantity' => 2, 'unit_price_usd' => 1.50, 'subtotal_usd' => 3.00]);
+
+        $res1 = $this->actingAs($this->adminUser)->getJson(route('kitchen.status'));
+        $res1->assertOk();
+        $this->assertEquals(0, $res1->json('count'));
+
+        // Orden con plato de cocina -> Debe contarse inmediatamente y retornar el latest_id
+        $kitchenOrder = Order::create([
+            'order_number' => 'ORD-WOK-01',
+            'dining_table_id' => $table->id,
+            'user_id' => $this->adminUser->id,
+            'status' => 'pending',
+            'total_usd' => 8.50,
+        ]);
+        OrderItem::create(['order_id' => $kitchenOrder->id, 'product_id' => $dish->id, 'quantity' => 1, 'unit_price_usd' => 7.00, 'subtotal_usd' => 7.00]);
+        OrderItem::create(['order_id' => $kitchenOrder->id, 'product_id' => $drink->id, 'quantity' => 1, 'unit_price_usd' => 1.50, 'subtotal_usd' => 1.50]);
+
+        $res2 = $this->actingAs($this->adminUser)->getJson(route('kitchen.status'));
+        $res2->assertOk();
+        $this->assertEquals(1, $res2->json('count'));
+        $this->assertEquals($kitchenOrder->id, $res2->json('latest_id'));
+        $this->assertEquals('ORD-WOK-01', $res2->json('latest_order_number'));
+    }
 }

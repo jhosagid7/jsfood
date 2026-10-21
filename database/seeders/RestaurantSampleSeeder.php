@@ -116,28 +116,31 @@ class RestaurantSampleSeeder extends Seeder
         // 4. Categorías de Menú
         $catBurgers = Category::firstOrCreate(['slug' => 'hamburguesas'], [
             'name' => 'Hamburguesas',
-            'icon' => 'burger',
+            'icon' => '🍔',
+            'image' => 'categories/hamburguesas.jpg',
             'color' => 'amber',
             'sort_order' => 1,
         ]);
 
         $catArroces = Category::firstOrCreate(['slug' => 'arroces-y-wok'], [
             'name' => 'Arroces & Wok',
-            'icon' => 'bowl-rice',
+            'icon' => '🍚',
+            'image' => 'categories/arroces_wok.jpg',
             'color' => 'red',
             'sort_order' => 2,
         ]);
 
         $catBebidas = Category::firstOrCreate(['slug' => 'bebidas'], [
             'name' => 'Bebidas & Refrescos',
-            'icon' => 'cup-straw',
+            'icon' => '🥤',
+            'image' => 'categories/bebidas_refrescos.jpg',
             'color' => 'blue',
             'sort_order' => 3,
         ]);
 
         $catInsumos = Category::firstOrCreate(['slug' => 'insumos-cocina'], [
             'name' => 'Insumos y Materia Prima',
-            'icon' => 'boxes',
+            'icon' => '📦',
             'color' => 'gray',
             'sort_order' => 99,
             'is_active' => false, // Oculto de la vista del mesonero
@@ -148,6 +151,7 @@ class RestaurantSampleSeeder extends Seeder
             'category_id' => $catInsumos->id,
             'name' => 'Pan Brioche de Hamburguesa',
             'type' => 'supply',
+            'send_to_kitchen' => false,
             'track_stock' => true,
             'current_stock' => 100.000, // 100 panes
             'unit' => 'unit',
@@ -158,6 +162,7 @@ class RestaurantSampleSeeder extends Seeder
             'category_id' => $catInsumos->id,
             'name' => 'Carne Molida Especial para Hamburguesa',
             'type' => 'supply',
+            'send_to_kitchen' => false,
             'track_stock' => true,
             'current_stock' => 20.000, // 20 kilos de carne
             'unit' => 'kg',
@@ -168,6 +173,7 @@ class RestaurantSampleSeeder extends Seeder
             'category_id' => $catInsumos->id,
             'name' => 'Queso Amarillo en Lonjas',
             'type' => 'supply',
+            'send_to_kitchen' => false,
             'track_stock' => true,
             'current_stock' => 150.000, // 150 lonjas
             'unit' => 'unit',
@@ -178,6 +184,7 @@ class RestaurantSampleSeeder extends Seeder
             'category_id' => $catInsumos->id,
             'name' => 'Arroz Blanco Grano Entero',
             'type' => 'supply',
+            'send_to_kitchen' => false,
             'track_stock' => true,
             'current_stock' => 50.000, // 50 kilos de arroz
             'unit' => 'kg',
@@ -188,6 +195,7 @@ class RestaurantSampleSeeder extends Seeder
             'category_id' => $catInsumos->id,
             'name' => 'Pechuga de Pollo Deshuesada',
             'type' => 'supply',
+            'send_to_kitchen' => false,
             'track_stock' => true,
             'current_stock' => 25.000, // 25 kilos
             'unit' => 'kg',
@@ -201,6 +209,7 @@ class RestaurantSampleSeeder extends Seeder
             'name' => 'Hamburguesa Clásica Americana',
             'description' => 'Pan brioche, 180g de carne angus, queso cheddar, vegetales frescos y salsa de la casa.',
             'type' => 'dish',
+            'send_to_kitchen' => true,
             'has_recipe' => true,
             'track_stock' => false, // Su stock se rige por sus insumos
             'price_usd' => 8.50,
@@ -227,6 +236,7 @@ class RestaurantSampleSeeder extends Seeder
             'name' => 'Arroz Chino Especial al Wok',
             'description' => 'Arroz frito al wok con pechuga de pollo, jamón, raíces chinas, cebollín y soya.',
             'type' => 'dish',
+            'send_to_kitchen' => true,
             'has_recipe' => true,
             'track_stock' => false,
             'price_usd' => 7.00,
@@ -249,6 +259,7 @@ class RestaurantSampleSeeder extends Seeder
             'name' => 'Coca-Cola 355ml Lata',
             'description' => 'Refresco frío en lata 355ml',
             'type' => 'direct',
+            'send_to_kitchen' => false,
             'has_recipe' => false,
             'track_stock' => true,
             'current_stock' => 48.000, // 48 latas en nevera
@@ -261,6 +272,7 @@ class RestaurantSampleSeeder extends Seeder
             'name' => 'Agua Mineral 600ml',
             'description' => 'Botella de agua purificada sin gas',
             'type' => 'direct',
+            'send_to_kitchen' => false,
             'has_recipe' => false,
             'track_stock' => true,
             'current_stock' => 60.000,

@@ -73,8 +73,11 @@
                     </button>
                     @foreach($categories as $cat)
                         <button wire:click="selectCategory({{ $cat->id }})"
-                            class="px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all {{ $selectedCategoryId === $cat->id ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
-                            {{ $cat->name }}
+                            class="px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center space-x-1.5 {{ $selectedCategoryId === $cat->id ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
+                            @if($cat->icon)
+                                <span>{{ $cat->icon }}</span>
+                            @endif
+                            <span>{{ $cat->name }}</span>
                         </button>
                     @endforeach
                 </div>
@@ -91,6 +94,10 @@
                             @if($product->image)
                                 <div class="h-20 w-full rounded-xl overflow-hidden mb-2 bg-slate-950 border border-slate-800/80">
                                     <img src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200">
+                                </div>
+                            @elseif($product->category && $product->category->image && file_exists(public_path('storage/' . $product->category->image)))
+                                <div class="h-20 w-full rounded-xl overflow-hidden mb-2 bg-slate-950 border border-slate-800/80">
+                                    <img src="{{ asset('storage/' . $product->category->image) }}" alt="{{ $product->name }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 opacity-90">
                                 </div>
                             @endif
 

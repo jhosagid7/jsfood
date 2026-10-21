@@ -90,6 +90,9 @@
                     @if($prod->image)
                         <img src="{{ asset('storage/' . $prod->image) }}" alt="{{ $prod->name }}" 
                             class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                    @elseif($prod->category && $prod->category->image && file_exists(public_path('storage/' . $prod->category->image)))
+                        <img src="{{ asset('storage/' . $prod->category->image) }}" alt="{{ $prod->category->name }}" 
+                            class="w-full h-full object-cover opacity-85 group-hover:scale-105 transition-transform duration-300">
                     @else
                         <div class="flex flex-col items-center justify-center text-slate-600">
                             <span class="text-5xl">{{ $prod->category?->icon ?: ($prod->type === 'supply' ? '🥩' : '🍽️') }}</span>

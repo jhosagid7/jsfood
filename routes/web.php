@@ -57,4 +57,20 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/device/heartbeat', function () {
         return response()->json(['status' => 'authorized']);
     })->name('device.heartbeat');
+
+    // 8. Estado en Tiempo Real de Cocina (KDS, globo rojo y alertas sonoras)
+    Route::get('/kitchen/status', function () {
+        $activeKitchenOrders = \App\Models\Order::whereIn('status', ['pending', 'in_kitchen'])
+            ->whereHas('items.product', fn($q) => $q->where('send_to_kitchen', true))
+            ->select('id', 'order_number')
+            ->get();
+
+        $latest = $activeKitchenOrders->sortByDesc('id')->first();
+
+        return response()->json([
+            'count' => $activeKitchenOrders->count(),
+            'latest_id' => $latest ? $latest->id : 0,
+            'latest_order_number' => $latest ? $latest->order_number : null,
+        ]);
+    })->name('kitchen.status');
 });
