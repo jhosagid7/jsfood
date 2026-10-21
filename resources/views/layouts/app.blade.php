@@ -99,27 +99,52 @@
                     </div>
 
                     <!-- Botón de Audio y Alertas Sonoras -->
-                    <button type="button" 
-                        x-data="{ 
+                    <div x-data="{ 
                             enabled: true,
                             toggle() {
                                 this.enabled = !this.enabled;
                                 if (window.JSFoodAudio) {
                                     window.JSFoodAudio.enabled = this.enabled;
                                     if (this.enabled) {
-                                        window.JSFoodAudio.init();
+                                        window.JSFoodAudio.unlock();
                                         window.JSFoodAudio.playKitchenChime();
+                                        window.dispatchEvent(new CustomEvent('notify', {
+                                            detail: { message: '🔔 Alertas de audio activadas', type: 'info' }
+                                        }));
+                                    } else {
+                                        window.dispatchEvent(new CustomEvent('notify', {
+                                            detail: { message: '🔕 Alertas silenciadas', type: 'warning' }
+                                        }));
                                     }
                                 }
+                            },
+                            testSound() {
+                                if (window.JSFoodAudio) {
+                                    window.JSFoodAudio.enabled = true;
+                                    this.enabled = true;
+                                    window.JSFoodAudio.unlock();
+                                    window.JSFoodAudio.playKitchenChime();
+                                    window.dispatchEvent(new CustomEvent('notify', {
+                                        detail: { message: '🔊 Timbre de cocina probado con éxito', type: 'info' }
+                                    }));
+                                }
                             }
-                        }"
-                        @click="toggle()"
-                        :title="enabled ? 'Sonido de alertas activado (clic para silenciar)' : 'Sonido silenciado (clic para activar)'"
-                        class="p-2 rounded-xl border transition-all text-xs flex items-center space-x-1.5 cursor-pointer"
-                        :class="enabled ? 'bg-amber-500/15 border-amber-500/40 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-500'">
-                        <span x-text="enabled ? '🔔' : '🔕'"></span>
-                        <span class="hidden sm:inline text-[11px] font-bold" x-text="enabled ? 'Sonido ON' : 'Sonido OFF'"></span>
-                    </button>
+                        }" class="flex items-center space-x-1.5">
+                        <button type="button" 
+                            @click="testSound()"
+                            title="Haz clic para probar que la alarma suena en tus cornetas"
+                            class="px-2.5 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 transition-all text-xs flex items-center space-x-1 cursor-pointer shadow-sm">
+                            <span>🔊</span>
+                            <span class="hidden sm:inline text-[11px] font-bold">Probar Alarma</span>
+                        </button>
+                        <button type="button" 
+                            @click="toggle()"
+                            :title="enabled ? 'Sonido activado (clic para silenciar)' : 'Sonido silenciado (clic para activar)'"
+                            class="p-1.5 rounded-xl border transition-all text-xs flex items-center justify-center cursor-pointer"
+                            :class="enabled ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-500'">
+                            <span x-text="enabled ? '🔔' : '🔕'"></span>
+                        </button>
+                    </div>
 
                     <form method="POST" action="{{ route('logout') }}" class="inline">
                         @csrf
@@ -201,22 +226,33 @@
         </template>
     </div>
 
-    <!-- Motor de Audio Dual: HTML5 Audio con WAV Sintetizado + Web Audio API (100% Funcional en Móviles y PC) -->
+    <!-- Aviso Flotante para Desbloquear Sonido si el Navegador lo bloqueó por política Autoplay -->
+    <div x-cloak x-show="audioNeedsPrompt" 
+        @click="activateAudio()"
+        class="fixed bottom-24 md:bottom-8 left-4 z-50 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-2xl shadow-2xl flex items-center space-x-2.5 cursor-pointer border-2 border-white/60 animate-bounce transition-all">
+        <span class="text-xl">🔊</span>
+        <div class="text-left">
+            <span class="block text-xs font-black uppercase leading-none">Activar Alarma Sonora</span>
+            <span class="block text-[10px] font-semibold opacity-90">Toca aquí para permitir timbres de cocina</span>
+        </div>
+    </div>
+
+    <!-- Motor de Audio Dual Ultra-Resiliente: Web Audio API Sintetizado + HTML5 Audio (100% Funcional en Móviles y PC) -->
     <script>
-        // Generador en memoria de sonidos WAV (PCM 16-bit) para reproducción nativa inmediata en teléfonos
-        function generateWavBlobUrl(tones) {
+        // Generador en memoria de sonidos WAV (PCM 16-bit) Data URI para máxima compatibilidad
+        function generateWavDataUri(tones) {
             try {
                 const sampleRate = 22050;
                 let totalDuration = 0;
-                tones.forEach(t => { totalDuration = Math.max(totalDuration, t.start + t.dur); });
+                tones.forEach(t => { totalDuration = Math.max(totalDuration, (t.start || 0) + (t.dur || 0.3)); });
                 const numSamples = Math.ceil(totalDuration * sampleRate);
                 const buffer = new Int16Array(numSamples);
 
                 tones.forEach(t => {
-                    const startSample = Math.floor(t.start * sampleRate);
-                    const endSample = Math.min(numSamples, Math.floor((t.start + t.dur) * sampleRate));
-                    const decay = t.decay || 5.0;
-                    const vol = t.vol || 0.8;
+                    const startSample = Math.floor((t.start || 0) * sampleRate);
+                    const endSample = Math.min(numSamples, Math.floor(((t.start || 0) + (t.dur || 0.3)) * sampleRate));
+                    const decay = t.decay || 4.5;
+                    const vol = t.vol || 0.85;
                     for (let i = startSample; i < endSample; i++) {
                         const time = (i - startSample) / sampleRate;
                         const envelope = Math.exp(-time * decay);
@@ -243,8 +279,17 @@
                 view.setUint32(36, 0x64617461, false); // "data"
                 view.setUint32(40, dataSize, true);
 
-                const blob = new Blob([header, buffer], { type: 'audio/wav' });
-                return URL.createObjectURL(blob);
+                // Convertir a Base64 Data URI seguro
+                const bytes = new Uint8Array(44 + dataSize);
+                bytes.set(new Uint8Array(header), 0);
+                bytes.set(new Uint8Array(buffer.buffer), 44);
+
+                let binary = '';
+                const len = bytes.byteLength;
+                for (let i = 0; i < len; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                return 'data:audio/wav;base64,' + btoa(binary);
             } catch (e) {
                 return null;
             }
@@ -253,38 +298,12 @@
         window.JSFoodAudio = {
             ctx: null,
             enabled: true,
-            kitchenWavUrl: null,
-            waiterWavUrl: null,
-            audioElKitchen: null,
-            audioElWaiter: null,
+            kitchenDataUri: null,
+            waiterDataUri: null,
             unlocked: false,
 
             init() {
-                // 1. Inicializar elementos de audio HTML5 pre-generados
-                if (!this.kitchenWavUrl) {
-                    this.kitchenWavUrl = generateWavBlobUrl([
-                        { freq: 880, start: 0, dur: 0.35, decay: 4.5, vol: 0.9 },
-                        { freq: 1320, start: 0.16, dur: 0.65, decay: 3.8, vol: 0.95 }
-                    ]);
-                    if (this.kitchenWavUrl) {
-                        this.audioElKitchen = new Audio(this.kitchenWavUrl);
-                        this.audioElKitchen.preload = 'auto';
-                    }
-                }
-
-                if (!this.waiterWavUrl) {
-                    this.waiterWavUrl = generateWavBlobUrl([
-                        { freq: 587.33, start: 0, dur: 0.25, decay: 5.0, vol: 0.8 },
-                        { freq: 880, start: 0.12, dur: 0.28, decay: 4.5, vol: 0.85 },
-                        { freq: 1174.66, start: 0.26, dur: 0.65, decay: 3.5, vol: 0.95 }
-                    ]);
-                    if (this.waiterWavUrl) {
-                        this.audioElWaiter = new Audio(this.waiterWavUrl);
-                        this.audioElWaiter.preload = 'auto';
-                    }
-                }
-
-                // 2. Inicializar Web Audio API
+                // 1. Inicializar Web Audio API Context
                 if (!this.ctx) {
                     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                     if (AudioContextClass) {
@@ -295,101 +314,139 @@
                     this.ctx.resume().catch(() => {});
                 }
 
-                // 3. Desbloquear permisos de audio en móviles (dummy play)
-                if (!this.unlocked) {
-                    if (this.audioElKitchen) {
-                        this.audioElKitchen.volume = 0.01;
-                        this.audioElKitchen.play()
-                            .then(() => {
-                                this.audioElKitchen.pause();
-                                this.audioElKitchen.currentTime = 0;
-                                this.audioElKitchen.volume = 1.0;
-                                this.unlocked = true;
-                            })
-                            .catch(() => {});
-                    }
+                // 2. Pre-generar Data URIs
+                if (!this.kitchenDataUri) {
+                    this.kitchenDataUri = generateWavDataUri([
+                        { freq: 784, start: 0, dur: 0.25, decay: 4.0, vol: 0.9 },
+                        { freq: 1046.5, start: 0.12, dur: 0.45, decay: 3.5, vol: 0.95 },
+                        { freq: 880, start: 0.40, dur: 0.25, decay: 4.0, vol: 0.9 },
+                        { freq: 1320, start: 0.52, dur: 0.60, decay: 3.0, vol: 1.0 }
+                    ]);
+                }
+
+                if (!this.waiterDataUri) {
+                    this.waiterDataUri = generateWavDataUri([
+                        { freq: 523.25, start: 0, dur: 0.18, decay: 4.5, vol: 0.85 },
+                        { freq: 659.25, start: 0.15, dur: 0.18, decay: 4.5, vol: 0.9 },
+                        { freq: 783.99, start: 0.30, dur: 0.20, decay: 4.0, vol: 0.95 },
+                        { freq: 1046.50, start: 0.45, dur: 0.65, decay: 3.2, vol: 1.0 }
+                    ]);
                 }
             },
 
+            // Desbloquear audio formalmente en el navegador ante toque/clic
+            unlock() {
+                this.init();
+                if (this.ctx) {
+                    if (this.ctx.state === 'suspended') {
+                        this.ctx.resume().catch(() => {});
+                    }
+                    try {
+                        const buf = this.ctx.createBuffer(1, 1, 22050);
+                        const src = this.ctx.createBufferSource();
+                        src.buffer = buf;
+                        src.connect(this.ctx.destination);
+                        src.start(0);
+                        this.unlocked = true;
+                    } catch(e) {}
+                }
+            },
+
+            // Timbre de Cocina: Campana doble potente ("Ding-Dong ... Ding-Dong!")
             playKitchenChime() {
                 if (!this.enabled) return;
                 this.init();
 
-                // Intentar reproducir con elemento HTML5 Audio (más confiable en teléfonos móviles)
-                let playedHtml5 = false;
-                if (this.audioElKitchen) {
-                    try {
-                        this.audioElKitchen.currentTime = 0;
-                        this.audioElKitchen.volume = 1.0;
-                        const p = this.audioElKitchen.play();
-                        if (p && typeof p.then === 'function') {
-                            p.then(() => { playedHtml5 = true; }).catch(() => {});
-                        }
-                    } catch(e) {}
-                }
-
-                // Motor secundario Web Audio API (Osciladores)
+                // 1. Motor Web Audio API (Osciladores en paralelo, volumen alto y resonante)
+                let playedWebAudio = false;
                 if (this.ctx) {
-                    const playOsc = () => {
+                    const playOscillators = () => {
                         const now = this.ctx.currentTime;
-                        [ { freq: 880, start: 0, dur: 0.35, gain: 0.7 }, { freq: 1320, start: 0.16, dur: 0.65, gain: 0.75 } ].forEach(tone => {
+                        const tones = [
+                            { freq: 784, start: 0, dur: 0.30, gain: 0.8 },
+                            { freq: 1046.5, start: 0.10, dur: 0.45, gain: 0.85 },
+                            { freq: 880, start: 0.40, dur: 0.30, gain: 0.8 },
+                            { freq: 1320, start: 0.50, dur: 0.65, gain: 0.9 }
+                        ];
+
+                        tones.forEach(t => {
                             const osc = this.ctx.createOscillator();
                             const gain = this.ctx.createGain();
                             osc.type = 'triangle';
-                            osc.frequency.setValueAtTime(tone.freq, now + tone.start);
-                            gain.gain.setValueAtTime(tone.gain, now + tone.start);
-                            gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
+                            osc.frequency.setValueAtTime(t.freq, now + t.start);
+                            gain.gain.setValueAtTime(0.001, now + t.start);
+                            gain.gain.exponentialRampToValueAtTime(t.gain, now + t.start + 0.02);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + t.start + t.dur);
                             osc.connect(gain);
                             gain.connect(this.ctx.destination);
-                            osc.start(now + tone.start);
-                            osc.stop(now + tone.start + tone.dur);
+                            osc.start(now + t.start);
+                            osc.stop(now + t.start + t.dur);
                         });
+                        playedWebAudio = true;
                     };
 
                     if (this.ctx.state === 'suspended') {
-                        this.ctx.resume().then(() => playOsc()).catch(() => {});
+                        this.ctx.resume().then(() => playOscillators()).catch(() => {});
                     } else {
-                        playOsc();
+                        playOscillators();
                     }
+                }
+
+                // 2. Motor de respaldo HTML5 Audio nativo (por si Web Audio API no arrancó)
+                if (this.kitchenDataUri) {
+                    try {
+                        const audio = new Audio(this.kitchenDataUri);
+                        audio.volume = 1.0;
+                        audio.play().catch(() => {});
+                    } catch(e) {}
                 }
             },
 
+            // Timbre de Mesonero: Arpegio ascendente alegre ("¡Comanda lista!")
             playWaiterChime() {
                 if (!this.enabled) return;
                 this.init();
 
-                // Intentar reproducir con elemento HTML5 Audio
-                if (this.audioElWaiter) {
-                    try {
-                        this.audioElWaiter.currentTime = 0;
-                        this.audioElWaiter.volume = 1.0;
-                        this.audioElWaiter.play().catch(() => {});
-                    } catch(e) {}
-                }
-
-                // Motor secundario Web Audio API (Osciladores)
+                // 1. Motor Web Audio API
                 if (this.ctx) {
-                    const playOsc = () => {
+                    const playOscillators = () => {
                         const now = this.ctx.currentTime;
-                        [ { freq: 587.33, start: 0, dur: 0.25, gain: 0.6 }, { freq: 880, start: 0.12, dur: 0.28, gain: 0.65 }, { freq: 1174.66, start: 0.26, dur: 0.65, gain: 0.75 } ].forEach(tone => {
+                        const tones = [
+                            { freq: 523.25, start: 0, dur: 0.20, gain: 0.75 },
+                            { freq: 659.25, start: 0.15, dur: 0.20, gain: 0.8 },
+                            { freq: 783.99, start: 0.30, dur: 0.25, gain: 0.85 },
+                            { freq: 1046.50, start: 0.45, dur: 0.65, gain: 0.95 }
+                        ];
+
+                        tones.forEach(t => {
                             const osc = this.ctx.createOscillator();
                             const gain = this.ctx.createGain();
                             osc.type = 'sine';
-                            osc.frequency.setValueAtTime(tone.freq, now + tone.start);
-                            gain.gain.setValueAtTime(tone.gain, now + tone.start);
-                            gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
+                            osc.frequency.setValueAtTime(t.freq, now + t.start);
+                            gain.gain.setValueAtTime(0.001, now + t.start);
+                            gain.gain.exponentialRampToValueAtTime(t.gain, now + t.start + 0.02);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + t.start + t.dur);
                             osc.connect(gain);
                             gain.connect(this.ctx.destination);
-                            osc.start(now + tone.start);
-                            osc.stop(now + tone.start + tone.dur);
+                            osc.start(now + t.start);
+                            osc.stop(now + t.start + t.dur);
                         });
                     };
 
                     if (this.ctx.state === 'suspended') {
-                        this.ctx.resume().then(() => playOsc()).catch(() => {});
+                        this.ctx.resume().then(() => playOscillators()).catch(() => {});
                     } else {
-                        playOsc();
+                        playOscillators();
                     }
+                }
+
+                // 2. Motor de respaldo HTML5 Audio
+                if (this.waiterDataUri) {
+                    try {
+                        const audio = new Audio(this.waiterDataUri);
+                        audio.volume = 1.0;
+                        audio.play().catch(() => {});
+                    } catch(e) {}
                 }
             }
         };
@@ -404,7 +461,7 @@
 
         // Desbloquear audio ante cualquier interacción táctil o clic
         const unlockAudio = () => {
-            if (window.JSFoodAudio) window.JSFoodAudio.init();
+            if (window.JSFoodAudio) window.JSFoodAudio.unlock();
         };
         ['click', 'touchstart', 'touchend', 'pointerdown', 'keydown'].forEach(evt => {
             document.addEventListener(evt, unlockAudio, { passive: true });
@@ -416,14 +473,27 @@
                 kitchenCount: initialCount || 0,
                 lastSeenKitchenOrderId: initialLatestId || 0,
                 lastSeenReadyOrderId: initialReadyId || 0,
+                audioNeedsPrompt: false,
                 init() {
                     // Inicializar motor de audio
-                    if (window.JSFoodAudio) window.JSFoodAudio.init();
+                    if (window.JSFoodAudio) {
+                        window.JSFoodAudio.init();
+                        if (window.JSFoodAudio.ctx && window.JSFoodAudio.ctx.state === 'suspended') {
+                            this.audioNeedsPrompt = true;
+                        }
+                    }
 
                     // Consultar en segundo plano cada 2.5 segundos
                     setInterval(() => {
                         this.pollKitchenStatus();
                     }, 2500);
+                },
+                activateAudio() {
+                    if (window.JSFoodAudio) {
+                        window.JSFoodAudio.unlock();
+                        window.JSFoodAudio.playKitchenChime();
+                    }
+                    this.audioNeedsPrompt = false;
                 },
                 pollKitchenStatus() {
                     fetch("{{ route('kitchen.status') }}", {
@@ -434,40 +504,36 @@
                     })
                     .then(res => res.json())
                     .then(data => {
-                        this.kitchenCount = data.count;
+                        this.kitchenCount = data.count || 0;
 
                         // 1. Alerta: Nueva comanda recibida para preparar en cocina
                         if (data.latest_id && data.latest_id > this.lastSeenKitchenOrderId) {
-                            if (this.lastSeenKitchenOrderId > 0) {
-                                if (window.JSFoodAudio) {
-                                    window.JSFoodAudio.playKitchenChime();
-                                }
-                                const orderRef = data.latest_order_number ? ' #' + data.latest_order_number : '';
-                                window.dispatchEvent(new CustomEvent('notify', {
-                                    detail: {
-                                        message: '🔔 ¡Nueva comanda recibida en cocina' + orderRef + '!',
-                                        type: 'warning'
-                                    }
-                                }));
+                            if (window.JSFoodAudio) {
+                                window.JSFoodAudio.playKitchenChime();
                             }
+                            const orderRef = data.latest_order_number ? ' #' + data.latest_order_number : '';
+                            window.dispatchEvent(new CustomEvent('notify', {
+                                detail: {
+                                    message: '🔔 ¡Nueva comanda recibida en cocina' + orderRef + '!',
+                                    type: 'warning'
+                                }
+                            }));
                             this.lastSeenKitchenOrderId = data.latest_id;
                         }
 
                         // 2. Alerta: Comanda lista para servir (para el mesonero en su teléfono / tablet)
                         if (data.latest_ready_id && data.latest_ready_id > this.lastSeenReadyOrderId) {
-                            if (this.lastSeenReadyOrderId > 0) {
-                                if (window.JSFoodAudio) {
-                                    window.JSFoodAudio.playWaiterChime();
-                                }
-                                const tableInfo = data.latest_ready_table ? ' (' + data.latest_ready_table + ')' : '';
-                                const orderRef = data.latest_ready_order_number ? ' #' + data.latest_ready_order_number : '';
-                                window.dispatchEvent(new CustomEvent('notify', {
-                                    detail: {
-                                        message: '🍽️ ¡Comanda lista para servir' + orderRef + tableInfo + '!',
-                                        type: 'success'
-                                    }
-                                }));
+                            if (window.JSFoodAudio) {
+                                window.JSFoodAudio.playWaiterChime();
                             }
+                            const tableInfo = data.latest_ready_table ? ' (' + data.latest_ready_table + ')' : '';
+                            const orderRef = data.latest_ready_order_number ? ' #' + data.latest_ready_order_number : '';
+                            window.dispatchEvent(new CustomEvent('notify', {
+                                detail: {
+                                    message: '🍽️ ¡Comanda lista para servir' + orderRef + tableInfo + '!',
+                                    type: 'success'
+                                }
+                            }));
                             this.lastSeenReadyOrderId = data.latest_ready_id;
                         }
                     })
