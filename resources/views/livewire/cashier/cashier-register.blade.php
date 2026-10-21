@@ -254,7 +254,6 @@
                                 💵 Efectivo USD ($)
                             </button>
                             <button wire:click="$set('selectedPaymentMethod', 'cash_ved')"
-                            <button wire:click="$set('selectedPaymentMethod', 'cash_ved')"
                                 class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'cash_ved' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
                                 🇻🇪 Efectivo Bs
                             </button>
@@ -283,11 +282,60 @@
                                 🇺🇸 Zelle
                             </button>
                             <button wire:click="$set('selectedPaymentMethod', 'credit')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'credit' ? 'bg-blue-600 text-white font-black border-blue-500 shadow-md' : 'bg-slate-950 border-slate-800 text-blue-400 hover:bg-slate-800' }}">
-                                👤 Crédito Cliente
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all col-span-2 sm:col-span-4 {{ $selectedPaymentMethod === 'credit' ? 'bg-blue-600 text-white font-black border-blue-400 shadow-lg ring-2 ring-blue-500/30' : 'bg-slate-950 border-slate-800 text-blue-400 hover:bg-slate-800' }}">
+                                👤 Cargar a Crédito del Cliente (Cuenta Abierta)
                             </button>
                         </div>
                     </div>
+
+                    <!-- Panel Informativo de Crédito cuando se selecciona Crédito Cliente -->
+                    @if($selectedPaymentMethod === 'credit')
+                        <div class="p-4 rounded-xl border {{ !$selectedCustomerId ? 'bg-amber-950/50 border-amber-500/60 text-amber-300' : 'bg-blue-950/60 border-blue-500/60 text-blue-200' }} space-y-2 animate-fade-in shadow-inner">
+                            @if(!$selectedCustomerId)
+                                <div class="flex items-start space-x-2.5">
+                                    <span class="text-xl">⚠️</span>
+                                    <div>
+                                        <span class="text-white block font-black text-sm">Paso Requerido: Selecciona un Cliente arriba</span>
+                                        <span class="text-amber-200 text-xs">
+                                            Actualmente está seleccionado <strong>Consumidor Final</strong>. Para cargar a crédito debes elegir arriba al cliente que asumirá esta deuda.
+                                        </span>
+                                    </div>
+                                </div>
+                            @else
+                                @php
+                                    $selCust = $customers->firstWhere('id', $selectedCustomerId);
+                                @endphp
+                                @if($selCust)
+                                    <div class="flex items-center justify-between text-xs pb-2 border-b border-blue-800/60">
+                                        <div>
+                                            <span class="text-[10px] uppercase font-bold text-slate-400 block">Cliente a quien se le cargará:</span>
+                                            <strong class="text-white text-base">{{ $selCust->name }}</strong>
+                                            <span class="text-slate-400 font-mono text-[11px] block">{{ $selCust->identification ?? 'Sin Cédula' }}</span>
+                                        </div>
+                                        <div class="text-right">
+                                            @if($selCust->allow_credit)
+                                                <span class="text-[10px] uppercase font-bold text-emerald-400 block">Crédito Disponible:</span>
+                                                <span class="text-emerald-300 font-black text-base font-mono">${{ number_format($selCust->available_credit, 2) }}</span>
+                                                <span class="text-[10px] text-slate-400 block">Límite: ${{ number_format($selCust->credit_limit, 2) }}</span>
+                                            @else
+                                                <span class="text-red-400 font-bold block text-xs bg-red-950/80 px-2 py-0.5 rounded border border-red-800">
+                                                    ❌ Este cliente no tiene crédito autorizado
+                                                </span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                    <div class="text-xs flex items-center justify-between pt-1">
+                                        <span class="text-slate-300">
+                                            Monto de esta comanda: <strong class="text-amber-400 font-mono text-sm">${{ number_format($amountReceived, 2) }}</strong>
+                                        </span>
+                                        <span class="text-slate-300">
+                                            Plazo acordado: <strong class="text-white">{{ $selCust->credit_days ?? 15 }} días</strong>
+                                        </span>
+                                    </div>
+                                @endif
+                            @endif
+                        </div>
+                    @endif
 
                     <!-- Selector de Cuenta Bancaria / Billetera Destino si aplica -->
                     @if(in_array($selectedPaymentMethod, ['mobile_pay', 'zelle', 'binance_usdt', 'nequi', 'card']))
@@ -438,20 +486,28 @@
                                 ? ((float)$amountReceived / $rate)
                                 : (float)$amountReceived;
                             $willCoverTotal = ($totalPaidSoFar + $amountUsdInput) >= ($selectedOrder->total_usd - 0.01);
+                            $isCredit = $selectedPaymentMethod === 'credit';
+                            $btnClass = $isCredit 
+                                ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-400 shadow-blue-600/30'
+                                : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 shadow-emerald-600/30';
                         @endphp
                         <button wire:click="processCheckout" wire:loading.attr="disabled"
-                            class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-lg flex items-center justify-center space-x-3 shadow-xl shadow-emerald-600/30 transition-all transform active:scale-95 cursor-pointer">
-                            <span wire:loading.remove wire:target="processCheckout">🖨️</span>
+                            class="w-full py-4 px-6 rounded-2xl {{ $btnClass }} disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-lg flex items-center justify-center space-x-3 shadow-xl transition-all transform active:scale-95 cursor-pointer">
+                            <span wire:loading.remove wire:target="processCheckout">{{ $isCredit ? '👤' : '🖨️' }}</span>
                             <span wire:loading wire:target="processCheckout" class="animate-spin">⏳</span>
                             <span wire:loading.remove wire:target="processCheckout">
-                                {{ $willCoverTotal ? "COBRAR TOTAL Y EMITIR FACTURA TÉRMICA (" . ($config->printer_width ?? 80) . "mm)" : "REGISTRAR ABONO Y ACTUALIZAR CUENTA" }}
+                                @if($isCredit)
+                                    CONFIRMAR Y CARGAR A CRÉDITO DEL CLIENTE (${{ number_format($amountReceived, 2) }})
+                                @else
+                                    {{ $willCoverTotal ? "COBRAR TOTAL Y EMITIR FACTURA TÉRMICA (" . ($config->printer_width ?? 80) . "mm)" : "REGISTRAR ABONO Y ACTUALIZAR CUENTA" }}
+                                @endif
                             </span>
                             <span wire:loading wire:target="processCheckout">
-                                Procesando cobro e imprimiendo ticket...
+                                {{ $isCredit ? 'Cargando comanda a crédito...' : 'Procesando cobro e imprimiendo ticket...' }}
                             </span>
                         </button>
                         <span class="block text-center text-xs text-slate-500 mt-2">
-                            Abre automáticamente la gaveta de dinero RJ11 y descuenta los insumos del inventario.
+                            {{ $isCredit ? 'Carga la deuda a la cuenta corriente del cliente, descuenta los insumos del inventario y cierra la orden de la mesa.' : 'Abre automáticamente la gaveta de dinero RJ11 y descuenta los insumos del inventario.' }}
                         </span>
                     </div>
 

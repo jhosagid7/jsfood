@@ -75,6 +75,12 @@ class CashierRegister extends Component
         $this->proofImage = null;
         $this->paymentReference = '';
 
+        if ($method === 'credit') {
+            if (!$this->selectedCustomerId) {
+                $this->dispatch('notify', message: "ℹ️ Selecciona arriba el Cliente a quien se le cargará este crédito", type: 'info');
+            }
+        }
+
         // Auto-asignar banco sugerido según el método
         if ($method === 'mobile_pay') {
             $bank = Bank::where('type', 'pago_movil')->where('state', true)->first();
@@ -510,19 +516,30 @@ class CashierRegister extends Component
         $hasCredit = collect($this->appliedPayments)->contains('method', 'credit');
         if ($hasCredit) {
             if (!$this->selectedCustomerId) {
-                $this->dispatch('notify', message: "Debes seleccionar un cliente registrado para compras a crédito", type: 'error');
+                $this->dispatch('notify', message: "⚠️ Debes seleccionar un cliente registrado arriba para compras a crédito (no Consumidor Final)", type: 'error');
                 return;
             }
 
             $customer = Customer::find($this->selectedCustomerId);
-            $creditAmount = collect($this->appliedPayments)->where('method', 'credit')->sum('amount_usd');
-
-            if (!$customer->hasAvailableCredit($creditAmount)) {
-                $this->dispatch('notify', message: "Límite de crédito excedido para el cliente", type: 'error');
+            if (!$customer) {
+                $this->dispatch('notify', message: "Cliente no encontrado en el sistema", type: 'error');
                 return;
             }
 
-            $customer->adjustBalance($creditAmount, 'credit_charge', $order->id, $cashier->id, 'ORD-' . $order->order_number, "Cargo por orden {$order->order_number}");
+            if (!$customer->allow_credit) {
+                $this->dispatch('notify', message: "❌ El cliente '{$customer->name}' no tiene crédito habilitado en el sistema", type: 'error');
+                return;
+            }
+
+            $creditAmount = collect($this->appliedPayments)->where('method', 'credit')->sum('amount_usd');
+
+            if (!$customer->hasAvailableCredit($creditAmount)) {
+                $disp = number_format($customer->available_credit, 2);
+                $this->dispatch('notify', message: "❌ Límite de crédito excedido. Disponible: \${$disp}, Requerido: \${$creditAmount}", type: 'error');
+                return;
+            }
+
+            $customer->adjustBalance($creditAmount, 'credit_charge', $order->id, $cashier->id, 'ORD-' . $order->order_number, "Cargo por comanda {$order->order_number}");
         }
 
         // 2. Si hubo cambio o vuelto, registrarlo en el último pago
