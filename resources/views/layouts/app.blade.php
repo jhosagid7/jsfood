@@ -226,17 +226,6 @@
         </template>
     </div>
 
-    <!-- Aviso Flotante para Desbloquear Sonido si el Navegador lo bloqueó por política Autoplay -->
-    <div x-cloak x-show="audioNeedsPrompt" 
-        @click="activateAudio()"
-        class="fixed bottom-24 md:bottom-8 left-4 z-50 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-2xl shadow-2xl flex items-center space-x-2.5 cursor-pointer border-2 border-white/60 animate-bounce transition-all">
-        <span class="text-xl">🔊</span>
-        <div class="text-left">
-            <span class="block text-xs font-black uppercase leading-none">Activar Alarma Sonora</span>
-            <span class="block text-[10px] font-semibold opacity-90">Toca aquí para permitir timbres de cocina</span>
-        </div>
-    </div>
-
     <!-- Motor de Audio Dual Ultra-Resiliente: Web Audio API Sintetizado + HTML5 Audio (100% Funcional en Móviles y PC) -->
     <script>
         // Generador en memoria de sonidos WAV (PCM 16-bit) Data URI para máxima compatibilidad
@@ -473,27 +462,16 @@
                 kitchenCount: initialCount || 0,
                 lastSeenKitchenOrderId: initialLatestId || 0,
                 lastSeenReadyOrderId: initialReadyId || 0,
-                audioNeedsPrompt: false,
                 init() {
                     // Inicializar motor de audio
                     if (window.JSFoodAudio) {
                         window.JSFoodAudio.init();
-                        if (window.JSFoodAudio.ctx && window.JSFoodAudio.ctx.state === 'suspended') {
-                            this.audioNeedsPrompt = true;
-                        }
                     }
 
                     // Consultar en segundo plano cada 2.5 segundos
                     setInterval(() => {
                         this.pollKitchenStatus();
                     }, 2500);
-                },
-                activateAudio() {
-                    if (window.JSFoodAudio) {
-                        window.JSFoodAudio.unlock();
-                        window.JSFoodAudio.playKitchenChime();
-                    }
-                    this.audioNeedsPrompt = false;
                 },
                 pollKitchenStatus() {
                     fetch("{{ route('kitchen.status') }}", {
