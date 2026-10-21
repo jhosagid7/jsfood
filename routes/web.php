@@ -49,6 +49,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/products', ProductList::class)->name('products.index');
     Route::get('/categories', CategoryManager::class)->name('categories.index');
 
+    // 5.5. Directorio de Clientes y Cuentas por Cobrar (Crédito)
+    Route::get('/customers', \App\Livewire\Customers\CustomerManager::class)->name('customers.index');
+
     // 6. Ajustes de Impresoras y Dispositivos (Ecosistema jspos-sales)
     Route::get('/settings/printers', PrinterSettings::class)->name('settings.printers');
     Route::get('/settings/devices', DeviceManager::class)->name('settings.devices');

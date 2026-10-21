@@ -74,6 +74,9 @@
                     <a href="{{ url('/cashier') }}" class="px-3 py-2 rounded-lg text-sm font-semibold transition-colors {{ request()->is('cashier*') ? 'bg-amber-500 text-slate-950 font-bold shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
                         💳 Caja & Cobro
                     </a>
+                    <a href="{{ url('/customers') }}" class="px-3 py-2 rounded-lg text-sm font-semibold transition-colors {{ request()->is('customers*') ? 'bg-amber-500 text-slate-950 font-bold shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
+                        👥 Clientes & Crédito
+                    </a>
                     <a href="{{ url('/products') }}" class="px-3 py-2 rounded-lg text-sm font-semibold transition-colors {{ request()->is('products*') || request()->is('categories*') ? 'bg-amber-500 text-slate-950 font-bold shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white' }}">
                         🍔 Menú & Platos
                     </a>
@@ -187,6 +190,10 @@
         <a href="{{ url('/cashier') }}" class="flex flex-col items-center py-1 px-2 rounded-lg text-xs {{ request()->is('cashier*') ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200' }}">
             <span class="text-lg">💳</span>
             <span>Caja</span>
+        </a>
+        <a href="{{ url('/customers') }}" class="flex flex-col items-center py-1 px-2 rounded-lg text-xs {{ request()->is('customers*') ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200' }}">
+            <span class="text-lg">👥</span>
+            <span>Clientes</span>
         </a>
         <a href="{{ url('/products') }}" class="flex flex-col items-center py-1 px-2 rounded-lg text-xs {{ request()->is('products*') || request()->is('categories*') ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200' }}">
             <span class="text-lg">🍔</span>
