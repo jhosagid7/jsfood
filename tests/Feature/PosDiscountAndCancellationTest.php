@@ -389,6 +389,95 @@ class PosDiscountAndCancellationTest extends TestCase
         $this->assertEquals(2, $order->fresh()->payments()->count());
         $this->assertEquals(40.00, $order->fresh()->payments()->sum('amount_usd'));
     }
+
+    public function test_cashier_can_view_order_items_and_toggle_detail()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $order = Order::create([
+            'user_id' => $user->id,
+            'order_number' => 'ORD-DETAIL-TEST',
+            'service_type' => 'dine_in',
+            'status' => 'pending',
+            'subtotal_usd' => 25.00,
+            'total_usd' => 25.00,
+        ]);
+
+        $product = \App\Models\Product::first();
+        $order->items()->create([
+            'product_id' => $product->id,
+            'quantity' => 2,
+            'unit_price_usd' => 12.50,
+            'subtotal_usd' => 25.00,
+            'notes' => 'Sin cebolla por favor',
+        ]);
+
+        Livewire::test(CashierRegister::class, ['order_id' => $order->id])
+            ->call('selectOrder', $order->id)
+            ->assertSee($product->name)
+            ->assertSee('Sin cebolla por favor')
+            ->assertSee('$25.00')
+            ->assertSet('showItemsDetail', true)
+            ->call('toggleItemsDetail')
+            ->assertSet('showItemsDetail', false);
+    }
+
+    public function test_cashier_can_split_order_by_items()
+    {
+        $user = User::first();
+        $this->actingAs($user);
+
+        $table = \App\Models\Table::first();
+        $products = \App\Models\Product::take(2)->get();
+        $prod1 = $products[0];
+        $prod2 = $products[1];
+
+        $order = Order::create([
+            'table_id' => $table->id,
+            'user_id' => $user->id,
+            'order_number' => 'ORD-SPLIT-ITEMS-TEST',
+            'service_type' => 'dine_in',
+            'account_label' => 'Cuenta Principal',
+            'status' => 'pending',
+            'subtotal_usd' => 30.00,
+            'total_usd' => 30.00,
+        ]);
+
+        $item1 = $order->items()->create([
+            'product_id' => $prod1->id,
+            'quantity' => 2,
+            'unit_price_usd' => 10.00,
+            'subtotal_usd' => 20.00,
+        ]);
+
+        $item2 = $order->items()->create([
+            'product_id' => $prod2->id,
+            'quantity' => 1,
+            'unit_price_usd' => 10.00,
+            'subtotal_usd' => 10.00,
+        ]);
+
+        Livewire::test(CashierRegister::class, ['order_id' => $order->id])
+            ->call('selectOrder', $order->id)
+            ->call('openSplitModal')
+            ->assertSet('showSplitModal', true)
+            ->assertSet('splitNewAccountLabel', 'Cuenta 2')
+            ->call('incrementSplitQty', $item1->id)
+            ->call('executeSplitOrder')
+            ->assertDispatched('notify')
+            ->assertSet('showSplitModal', false);
+
+        // Cuenta original debe tener 1x prod1 ($10) y 1x prod2 ($10) = $20
+        $this->assertEquals(20.00, $order->fresh()->total_usd);
+        $this->assertEquals(1, $order->fresh()->items()->where('product_id', $prod1->id)->first()->quantity);
+
+        // Nueva cuenta creada en la mesa con 1x prod1 = $10
+        $newOrder = Order::where('table_id', $table->id)->where('account_label', 'Cuenta 2')->first();
+        $this->assertNotNull($newOrder);
+        $this->assertEquals(10.00, $newOrder->total_usd);
+        $this->assertEquals(1, $newOrder->items()->count());
+    }
 }
 
 

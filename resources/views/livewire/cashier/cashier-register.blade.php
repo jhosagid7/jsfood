@@ -95,6 +95,11 @@
                             <div class="flex items-center space-x-3 mt-1 text-xs text-slate-400">
                                 <span class="font-mono">Factura/Orden: #{{ $selectedOrder->order_number }}</span>
                                 <span>•</span>
+                                <button type="button" wire:click="openSplitModal" class="text-purple-400 hover:text-purple-300 font-bold hover:underline flex items-center space-x-1 cursor-pointer">
+                                    <span>🍽️</span>
+                                    <span>Dividir por Ítems</span>
+                                </button>
+                                <span>•</span>
                                 <button wire:click="cancelSelectedOrder" 
                                     wire:confirm="¿Estás seguro de cancelar o descartar esta orden? Esta acción no se puede deshacer."
                                     class="text-red-400 hover:text-red-300 font-bold hover:underline flex items-center space-x-1">
@@ -168,6 +173,60 @@
                             </div>
                         </div>
                     @endif
+
+                    <!-- Detalle de la Comanda / Consumo del Cliente -->
+                    <div class="bg-slate-950/80 rounded-2xl border border-slate-800 p-4 space-y-3 shadow-inner">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-base">📋</span>
+                                <h4 class="text-xs font-black uppercase tracking-wider text-slate-200">
+                                    Consumo de la Mesa / Comanda
+                                </h4>
+                                <span class="bg-slate-800 text-amber-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-slate-700">
+                                    {{ $selectedOrder->items->count() }} ítems ({{ (int) $selectedOrder->items->sum('quantity') }} platos/bebidas)
+                                </span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button type="button" wire:click="openSplitModal"
+                                    class="px-2.5 py-1 rounded-xl bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/40 text-xs font-bold flex items-center space-x-1.5 transition-all shadow-sm cursor-pointer">
+                                    <span>🍽️</span>
+                                    <span>Dividir por Ítems / Separar</span>
+                                </button>
+                                <button type="button" wire:click="toggleItemsDetail"
+                                    class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer">
+                                    {{ $showItemsDetail ? '▲ Ocultar' : '▼ Ver Platos' }}
+                                </button>
+                            </div>
+                        </div>
+
+                        @if($showItemsDetail)
+                            <div class="divide-y divide-slate-800/80 max-h-52 overflow-y-auto pr-1">
+                                @forelse($selectedOrder->items as $item)
+                                    <div class="py-2.5 flex items-center justify-between text-xs" wire:key="cashier-item-{{ $item->id }}">
+                                        <div class="flex items-center space-x-2.5">
+                                            <span class="w-6 h-6 rounded-lg bg-slate-900 text-amber-400 font-black text-[11px] flex items-center justify-center border border-slate-800 shadow-sm shrink-0">
+                                                {{ (int) $item->quantity }}x
+                                            </span>
+                                            <div>
+                                                <span class="font-bold text-white text-sm">{{ $item->product->name ?? 'Producto' }}</span>
+                                                @if($item->notes)
+                                                    <span class="block text-[11px] text-amber-400/90 italic mt-0.5">📝 {{ $item->notes }}</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="font-bold text-slate-200 text-sm">${{ number_format($item->subtotal_usd, 2) }}</span>
+                                            <span class="block text-[10px] text-slate-500 font-mono">(${{ number_format($item->unit_price_usd, 2) }} c/u)</span>
+                                        </div>
+                                    </div>
+                                @empty
+                                    <div class="py-3 text-center text-xs text-slate-500">
+                                        No hay productos registrados en esta orden.
+                                    </div>
+                                @endforelse
+                            </div>
+                        @endif
+                    </div>
 
                     <!-- Selección de Cliente y Estado de Crédito -->
                     <div class="bg-slate-950/50 p-3.5 rounded-xl border border-slate-800 space-y-2">
@@ -494,6 +553,100 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    @endif
+
+    <!-- MODAL DE DIVISIÓN DE CUENTA POR ÍTEMS (DESDE CAJA) -->
+    @if($showSplitModal && $selectedOrder)
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+            <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col max-h-[90vh]">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-2xl">🍽️</span>
+                        <div>
+                            <h3 class="text-lg font-black text-white">Dividir Cuenta / Separar Platos</h3>
+                            <span class="text-xs text-slate-400">Selecciona qué consumió cada persona para cobrar por separado</span>
+                        </div>
+                    </div>
+                    <button wire:click="$set('showSplitModal', false)" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-base">
+                        ✕
+                    </button>
+                </div>
+
+                <!-- Nombre de la Nueva Cuenta Destino -->
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Nombre o Etiqueta de la Nueva Cuenta:</label>
+                    <input type="text" wire:model="splitNewAccountLabel" placeholder="Ej: Cuenta 2, Amigo Carlos, etc."
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-bold focus:ring-2 focus:ring-purple-500 focus:outline-none">
+                </div>
+
+                <!-- Lista de Ítems a Mover -->
+                <div class="flex-1 overflow-y-auto space-y-2.5 divide-y divide-slate-800/60 pr-1 mb-4">
+                    @foreach($selectedOrder->items as $item)
+                        @php
+                            $qtyToMove = $splitQuantities[$item->id] ?? 0;
+                        @endphp
+                        <div class="pt-2 first:pt-0 flex items-center justify-between" wire:key="cashier-split-item-{{ $item->id }}">
+                            <div class="flex-1 pr-3">
+                                <h5 class="text-sm font-bold text-white leading-tight">
+                                    {{ $item->product->name ?? 'Producto' }}
+                                </h5>
+                                <div class="text-xs text-slate-400">
+                                    En la comanda: <strong class="text-amber-400">{{ (int) $item->quantity }}x</strong> • (${{ number_format($item->unit_price_usd, 2) }} c/u)
+                                </div>
+                            </div>
+
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs text-slate-400 font-semibold mr-1">Mover:</span>
+                                <div class="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                                    <button type="button" wire:click="decrementSplitQty({{ $item->id }})"
+                                        class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center text-sm transition-colors cursor-pointer">
+                                        -
+                                    </button>
+                                    <span class="w-6 text-center text-xs font-black {{ $qtyToMove > 0 ? 'text-purple-300' : 'text-slate-500' }}">
+                                        {{ $qtyToMove }}
+                                    </span>
+                                    <button type="button" wire:click="incrementSplitQty({{ $item->id }})"
+                                        class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center text-sm transition-colors cursor-pointer">
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+
+                <!-- Totales Estimados -->
+                @php
+                    $newTotal = 0;
+                    foreach($selectedOrder->items as $item) {
+                        $qty = $splitQuantities[$item->id] ?? 0;
+                        $newTotal += ($qty * $item->unit_price_usd);
+                    }
+                    $remainingTotal = max(0, $selectedOrder->total_usd - $newTotal);
+                @endphp
+                <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 mb-4 flex items-center justify-between text-xs">
+                    <div>
+                        <span class="text-slate-400 block">Nueva cuenta ({{ $splitNewAccountLabel ?: 'Sub-cuenta' }}):</span>
+                        <strong class="text-purple-400 text-sm">${{ number_format($newTotal, 2) }}</strong>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-slate-400 block">Restante en cuenta actual:</span>
+                        <strong class="text-amber-400 text-sm">${{ number_format($remainingTotal, 2) }}</strong>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <button type="button" wire:click="$set('showSplitModal', false)"
+                        class="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors cursor-pointer">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="executeSplitOrder"
+                        class="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs shadow-lg shadow-purple-600/30 transition-all cursor-pointer">
+                        Confirmar División de Cuenta
+                    </button>
+                </div>
             </div>
         </div>
     @endif
