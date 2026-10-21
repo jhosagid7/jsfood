@@ -229,11 +229,28 @@
                     </div>
 
                     <!-- Selección de Cliente y Estado de Crédito -->
+                    @php
+                        $selCust = $selectedCustomerId ? $customers->firstWhere('id', $selectedCustomerId) : null;
+                        $canCredit = $selCust && $selCust->allow_credit;
+                    @endphp
                     <div class="bg-slate-950/50 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                        <label class="block text-xs font-bold text-slate-300 uppercase">Cliente a Facturar:</label>
+                        <div class="flex items-center justify-between">
+                            <label class="block text-xs font-bold text-slate-300 uppercase">Cliente a Facturar:</label>
+                            @if($selCust)
+                                @if($canCredit)
+                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                        ✓ Crédito Autorizado (Disp: ${{ number_format($selCust->available_credit, 2) }})
+                                    </span>
+                                @else
+                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                                        Solo Contado (Sin Crédito)
+                                    </span>
+                                @endif
+                            @endif
+                        </div>
                         <select wire:model.live="selectedCustomerId"
                             class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500 focus:outline-none">
-                            <option value="">Consumidor Final</option>
+                            <option value="">Consumidor Final (Venta de Contado)</option>
                             @foreach($customers as $cust)
                                 <option value="{{ $cust->id }}">
                                     {{ $cust->name }} ({{ $cust->identification ?? 'S/R' }})
@@ -247,45 +264,81 @@
 
                     <!-- Métodos de Pago Disponibles (Botones Táctiles) -->
                     <div>
-                        <label class="block text-xs font-bold text-slate-300 uppercase mb-2">Método de Pago:</label>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-xs font-bold text-slate-300 uppercase">
+                                Modo de Pago:
+                            </label>
+                            @if($canCredit)
+                                <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full {{ $selectedPaymentMethod === 'credit' ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50' : 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40' }}">
+                                    {{ $selectedPaymentMethod === 'credit' ? 'Modo Seleccionado: CRÉDITO' : 'Modo Seleccionado: CONTADO' }}
+                                </span>
+                            @else
+                                <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-600/20 text-emerald-400 border border-emerald-500/40">
+                                    Modo Seleccionado: CONTADO
+                                </span>
+                            @endif
+                        </div>
+
+                        <!-- Opciones de Contado (Efectivo / Tarjeta / Transferencia) -->
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            <button wire:click="$set('selectedPaymentMethod', 'cash_usd')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'cash_usd' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                            <button type="button" wire:click="$set('selectedPaymentMethod', 'cash_usd')"
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'cash_usd' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
                                 💵 Efectivo USD ($)
                             </button>
-                            <button wire:click="$set('selectedPaymentMethod', 'cash_ved')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'cash_ved' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                            <button type="button" wire:click="$set('selectedPaymentMethod', 'cash_ved')"
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'cash_ved' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
                                 🇻🇪 Efectivo Bs
                             </button>
-                            <button wire:click="$set('selectedPaymentMethod', 'mobile_pay')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'mobile_pay' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                            <button type="button" wire:click="$set('selectedPaymentMethod', 'mobile_pay')"
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'mobile_pay' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
                                 📲 Pago Móvil
                             </button>
-                            <button wire:click="$set('selectedPaymentMethod', 'card')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'card' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                            <button type="button" wire:click="$set('selectedPaymentMethod', 'card')"
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'card' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
                                 💳 Tarjeta / Punto
                             </button>
-                            <button wire:click="$set('selectedPaymentMethod', 'cash_cop')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'cash_cop' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                            <button type="button" wire:click="$set('selectedPaymentMethod', 'cash_cop')"
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'cash_cop' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
                                 🇨🇴 Pesos (COP)
                             </button>
-                            <button wire:click="$set('selectedPaymentMethod', 'nequi')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'nequi' ? 'bg-pink-600 text-white font-black border-pink-500 shadow-md' : 'bg-slate-950 border-slate-800 text-pink-400 hover:bg-slate-800' }}">
+                            <button type="button" wire:click="$set('selectedPaymentMethod', 'nequi')"
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'nequi' ? 'bg-pink-600 text-white font-black border-pink-500 shadow-md ring-2 ring-pink-500/30' : 'bg-slate-950 border-slate-800 text-pink-400 hover:bg-slate-800' }}">
                                 🟣 Nequi
                             </button>
-                            <button wire:click="$set('selectedPaymentMethod', 'binance_usdt')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'binance_usdt' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                            <button type="button" wire:click="$set('selectedPaymentMethod', 'binance_usdt')"
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'binance_usdt' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
                                 🟡 Binance USDT
                             </button>
-                            <button wire:click="$set('selectedPaymentMethod', 'zelle')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all {{ $selectedPaymentMethod === 'zelle' ? 'bg-purple-600 text-white font-black border-purple-500 shadow-md' : 'bg-slate-950 border-slate-800 text-purple-400 hover:bg-slate-800' }}">
+                            <button type="button" wire:click="$set('selectedPaymentMethod', 'zelle')"
+                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'zelle' ? 'bg-purple-600 text-white font-black border-purple-500 shadow-md ring-2 ring-purple-500/30' : 'bg-slate-950 border-slate-800 text-purple-400 hover:bg-slate-800' }}">
                                 🇺🇸 Zelle
                             </button>
-                            <button wire:click="$set('selectedPaymentMethod', 'credit')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all col-span-2 sm:col-span-4 {{ $selectedPaymentMethod === 'credit' ? 'bg-blue-600 text-white font-black border-blue-400 shadow-lg ring-2 ring-blue-500/30' : 'bg-slate-950 border-slate-800 text-blue-400 hover:bg-slate-800' }}">
-                                👤 Cargar a Crédito del Cliente (Cuenta Abierta)
-                            </button>
                         </div>
+
+                        <!-- Opción de Crédito (Visible ÚNICAMENTE si el cliente seleccionado tiene crédito aprobado) -->
+                        @if($canCredit)
+                            <div class="mt-3 p-3 rounded-xl bg-blue-950/40 border border-blue-800/70">
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-[11px] font-bold text-blue-300 flex items-center space-x-1">
+                                        <span>👤</span>
+                                        <span>Crédito Aprobado Disponible:</span>
+                                    </span>
+                                    <span class="text-[11px] text-slate-300">
+                                        Disp: <strong class="text-emerald-400 font-mono">${{ number_format($selCust->available_credit, 2) }}</strong> / Límite: <span class="font-mono">${{ number_format($selCust->credit_limit, 2) }}</span>
+                                    </span>
+                                </div>
+                                <button type="button" wire:click="$set('selectedPaymentMethod', 'credit')"
+                                    class="w-full p-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center space-x-2 cursor-pointer {{ $selectedPaymentMethod === 'credit' ? 'bg-blue-600 text-white font-black border-blue-400 shadow-lg ring-2 ring-blue-500/30' : 'bg-slate-900 border-blue-800/70 text-blue-300 hover:bg-blue-900/40' }}">
+                                    <span>👤</span>
+                                    <span>{{ $selectedPaymentMethod === 'credit' ? '✓ Modo Crédito Seleccionado (Cuenta Abierta)' : 'Cargar a Crédito del Cliente (Cuenta Abierta)' }}</span>
+                                </button>
+                                @if($selectedPaymentMethod === 'credit')
+                                    <p class="text-[10px] text-blue-300/80 mt-1.5 text-center">
+                                        💡 Si el cliente desea pagar de contado (Efectivo/Tarjeta), simplemente haz clic en cualquiera de los botones de contado arriba.
+                                    </p>
+                                @endif
+                            </div>
+                        @endif
                     </div>
 
                     <!-- Panel Informativo de Crédito cuando se selecciona Crédito Cliente -->
@@ -499,7 +552,7 @@
                                 @if($isCredit)
                                     CONFIRMAR Y CARGAR A CRÉDITO DEL CLIENTE (${{ number_format($amountReceived, 2) }})
                                 @else
-                                    {{ $willCoverTotal ? "COBRAR TOTAL Y EMITIR FACTURA TÉRMICA (" . ($config->printer_width ?? 80) . "mm)" : "REGISTRAR ABONO Y ACTUALIZAR CUENTA" }}
+                                    {{ $willCoverTotal ? "COBRAR DE CONTADO Y EMITIR FACTURA TÉRMICA (" . ($config->printer_width ?? 80) . "mm)" : "REGISTRAR ABONO Y ACTUALIZAR CUENTA" }}
                                 @endif
                             </span>
                             <span wire:loading wire:target="processCheckout">

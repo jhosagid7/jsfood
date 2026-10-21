@@ -77,7 +77,16 @@ class CashierRegister extends Component
 
         if ($method === 'credit') {
             if (!$this->selectedCustomerId) {
-                $this->dispatch('notify', message: "ℹ️ Selecciona arriba el Cliente a quien se le cargará este crédito", type: 'info');
+                $this->selectedPaymentMethod = 'cash_usd';
+                $this->dispatch('notify', message: "⚠️ Para vender a crédito debes seleccionar primero un cliente con crédito aprobado.", type: 'warning');
+                return;
+            }
+
+            $customer = Customer::find($this->selectedCustomerId);
+            if (!$customer || !$customer->allow_credit) {
+                $this->selectedPaymentMethod = 'cash_usd';
+                $this->dispatch('notify', message: "❌ El cliente seleccionado no tiene crédito autorizado en el sistema.", type: 'warning');
+                return;
             }
         }
 
@@ -104,6 +113,23 @@ class CashierRegister extends Component
         $this->recalculateRemaining();
     }
 
+    public function updatedSelectedCustomerId($customerId): void
+    {
+        if (!$customerId) {
+            if ($this->selectedPaymentMethod === 'credit') {
+                $this->selectedPaymentMethod = 'cash_usd';
+            }
+            return;
+        }
+
+        $customer = Customer::find($customerId);
+        if (!$customer || !$customer->allow_credit) {
+            if ($this->selectedPaymentMethod === 'credit') {
+                $this->selectedPaymentMethod = 'cash_usd';
+            }
+        }
+    }
+
     public function selectOrder(int $orderId)
     {
         $order = Order::with('items.product', 'diningTable', 'customer', 'payments.bank')->find($orderId);
@@ -126,6 +152,10 @@ class CashierRegister extends Component
 
         $this->selectedOrderId = $orderId;
         $this->selectedCustomerId = $order->customer_id;
+        $this->selectedPaymentMethod = 'cash_usd'; // Siempre por defecto Contado
+        $this->selectedBankId = null;
+        $this->proofImage = null;
+        $this->paymentReference = '';
         $this->discountValue = $order->discount_usd > 0 ? (float) $order->discount_usd : 0.00;
         $this->discountType = 'fixed';
         
@@ -572,7 +602,8 @@ class CashierRegister extends Component
         }
 
         // Resetear y seleccionar siguiente orden
-        $this->reset(['selectedOrderId', 'appliedPayments', 'paymentReference', 'discountValue']);
+        $this->reset(['selectedOrderId', 'appliedPayments', 'paymentReference', 'discountValue', 'selectedCustomerId']);
+        $this->selectedPaymentMethod = 'cash_usd';
         $this->dispatch('clear-order-query');
 
         $nextPending = Order::whereNotIn('status', ['paid', 'cancelled'])->latest()->first();

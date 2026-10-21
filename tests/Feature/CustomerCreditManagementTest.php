@@ -10,6 +10,11 @@ use App\Models\User;
 use App\Models\Customer;
 use App\Models\Bank;
 use App\Livewire\Customers\CustomerManager;
+use App\Livewire\Cashier\CashierRegister;
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Product;
+use App\Models\Category;
 use App\Notifications\CreditPaymentReceivedNotification;
 use App\Notifications\CreditPaymentReminderNotification;
 
@@ -204,5 +209,87 @@ class CustomerCreditManagementTest extends TestCase
             ->assertDispatched('notify');
 
         Notification::assertSentTo($customer, CreditPaymentReminderNotification::class);
+    }
+
+    public function test_cashier_defaults_to_contado_and_can_choose_contado_for_credit_customer(): void
+    {
+        $category = Category::create(['name' => 'Comida', 'slug' => 'comida', 'sort' => 1]);
+        $product = Product::create([
+            'category_id' => $category->id,
+            'name' => 'Hamburguesa Especial',
+            'slug' => 'hamburguesa-especial',
+            'price_usd' => 10.00,
+            'cost_usd' => 4.00,
+            'type' => 'prepared',
+            'state' => true,
+        ]);
+
+        $customer = Customer::create([
+            'name' => 'Cliente VIP con Credito',
+            'allow_credit' => true,
+            'credit_limit' => 500.00,
+            'current_balance' => 0.00,
+        ]);
+
+        $order = Order::create([
+            'user_id' => $this->adminUser->id,
+            'customer_id' => $customer->id,
+            'service_type' => 'dine_in',
+            'status' => 'pending',
+            'total_usd' => 10.00,
+            'subtotal_usd' => 10.00,
+        ]);
+
+        OrderItem::create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'unit_price_usd' => 10.00,
+            'subtotal_usd' => 10.00,
+        ]);
+
+        // Al seleccionar la orden, debe estar en Contado (cash_usd) por defecto
+        $test = Livewire::actingAs($this->adminUser)
+            ->test(CashierRegister::class)
+            ->call('selectOrder', $order->id)
+            ->assertSet('selectedPaymentMethod', 'cash_usd');
+
+        // El cajero puede cobrar al contado aunque el cliente tenga crédito aprobado
+        $test->set('amountReceived', 10.00)
+            ->call('processCheckout')
+            ->assertDispatched('notify');
+
+        $order->refresh();
+        $customer->refresh();
+        $this->assertEquals('paid', $order->status);
+        $this->assertEquals(0.00, $customer->current_balance); // No se cargó a crédito, fue de contado
+    }
+
+    public function test_cashier_blocks_credit_for_customer_without_credit_permission(): void
+    {
+        $customerWithoutCredit = Customer::create([
+            'name' => 'Cliente Sin Credito',
+            'allow_credit' => false,
+            'credit_limit' => 0.00,
+            'current_balance' => 0.00,
+        ]);
+
+        $order = Order::create([
+            'user_id' => $this->adminUser->id,
+            'customer_id' => $customerWithoutCredit->id,
+            'service_type' => 'dine_in',
+            'status' => 'pending',
+            'total_usd' => 15.00,
+            'subtotal_usd' => 15.00,
+        ]);
+
+        Livewire::actingAs($this->adminUser)
+            ->test(CashierRegister::class)
+            ->call('selectOrder', $order->id)
+            ->assertSet('selectedPaymentMethod', 'cash_usd')
+            // Intentar seleccionar crédito debe ser rechazado y volver a cash_usd
+            ->set('selectedPaymentMethod', 'credit')
+            ->assertSet('selectedPaymentMethod', 'cash_usd')
+            ->assertDispatched('notify');
     }
 }
