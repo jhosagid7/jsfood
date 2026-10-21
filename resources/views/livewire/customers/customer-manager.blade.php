@@ -418,7 +418,7 @@
     <!-- MODAL 2: Registrar Abono / Pago de Deuda -->
     @if($showAbonoModal && $abonoCustomer)
         <div class="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl space-y-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-5 sm:p-6 shadow-2xl space-y-4 max-h-[95vh] overflow-y-auto">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-800">
                     <div>
                         <h3 class="text-lg font-black text-white flex items-center space-x-2">
@@ -429,7 +429,7 @@
                         </span>
                     </div>
                     <button type="button" wire:click="$set('showAbonoModal', false)"
-                        class="text-slate-400 hover:text-white text-xl font-bold p-1">
+                        class="text-slate-400 hover:text-white text-xl font-bold p-1 cursor-pointer">
                         ✕
                     </button>
                 </div>
@@ -437,43 +437,36 @@
                 <div class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
                     <div>
                         <span class="text-xs font-bold text-slate-400 uppercase block">Saldo Total Adeudado:</span>
-                        <span class="text-xl font-black text-red-400 font-mono">${{ number_format($abonoCustomer->current_balance, 2) }}</span>
+                        <span class="text-xl font-black text-red-400 font-mono">${{ number_format($abonoCustomer->current_balance, 2) }} USD</span>
                     </div>
-                    @if($config && $config->bcv_exchange_rate > 0)
+                    @if($config && ($config->bcv_rate ?? 0) > 0)
                         <div class="text-right">
-                            <span class="text-xs text-slate-400 font-semibold block">En Bolívares (BCV):</span>
-                            <span class="text-sm font-black text-slate-200 font-mono">
-                                Bs {{ number_format($abonoCustomer->current_balance * $config->bcv_exchange_rate, 2) }}
+                            <span class="text-xs text-slate-400 font-semibold block">En Bolívares (BCV {{ number_format($config->bcv_rate, 2) }}):</span>
+                            <span class="text-base font-black text-amber-400 font-mono">
+                                Bs {{ number_format($abonoCustomer->current_balance * $config->bcv_rate, 2) }}
                             </span>
                         </div>
                     @endif
                 </div>
 
                 <form wire:submit.prevent="processAbono" class="space-y-3.5">
-                    <!-- Monto a Abonar -->
-                    <div>
-                        <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Monto a Abonar ($ USD) *</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-amber-500 font-black text-lg">$</span>
-                            <input type="number" step="0.01" min="0.01" max="{{ $abonoCustomer->current_balance + 0.01 }}" wire:model="abonoAmountUsd"
-                                class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-base text-white font-black focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono">
-                        </div>
-                    </div>
-
                     <!-- Métodos de Pago Rápido -->
                     <div>
                         <label class="block text-xs font-bold text-slate-300 uppercase mb-1.5">Método de Pago:</label>
-                        <div class="grid grid-cols-2 gap-2 text-xs font-bold">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs font-bold">
                             @foreach([
                                 'cash_usd' => '💵 Efectivo USD',
                                 'cash_bs' => '🇻🇪 Efectivo Bs',
                                 'pago_movil' => '📲 Pago Móvil',
                                 'pos_card' => '💳 Tarjeta / Punto',
+                                'cash_cop' => '🇨🇴 Pesos (COP)',
+                                'nequi' => '🟣 Nequi',
+                                'binance_usdt' => '🟡 Binance USDT',
                                 'zelle' => '🇺🇸 Zelle',
                                 'transfer' => '🏦 Transferencia'
                             ] as $mKey => $mLabel)
-                                <button type="button" wire:click="$set('abonoMethod', '{{ $mKey }}')"
-                                    class="p-2 rounded-xl border text-center transition-all cursor-pointer {{ $abonoMethod === $mKey ? 'bg-amber-500 text-slate-950 border-amber-500 font-black shadow-md' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                                <button type="button" wire:click="setAbonoMethod('{{ $mKey }}')"
+                                    class="p-2 rounded-xl border text-center transition-all cursor-pointer {{ $abonoMethod === $mKey ? 'bg-amber-500 text-slate-950 border-amber-500 font-black shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
                                     {{ $mLabel }}
                                 </button>
                             @endforeach
@@ -481,24 +474,117 @@
                     </div>
 
                     <!-- Banco Receptor (si aplica) -->
-                    @if(in_array($abonoMethod, ['pago_movil', 'transfer', 'pos_card', 'zelle']))
+                    @if(in_array($abonoMethod, ['pago_movil', 'transfer', 'pos_card', 'zelle', 'nequi', 'binance_usdt']))
                         <div>
                             <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Cuenta / Banco Receptor:</label>
-                            <select wire:model="abonoBankId"
+                            <select wire:model.live="abonoBankId"
                                 class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500 focus:outline-none">
-                                <option value="">Seleccionar Banco / Cuenta</option>
+                                <option value="">-- Seleccionar Banco / Cuenta --</option>
                                 @foreach($banks as $b)
-                                    <option value="{{ $b->id }}">{{ $b->name }} ({{ $b->type }})</option>
+                                    <option value="{{ $b->id }}">{{ $b->name }} ({{ $b->currency_code }}) - {{ $b->account_holder }}</option>
                                 @endforeach
                             </select>
                         </div>
                     @endif
 
+                    <!-- Monto a Abonar con Conversión Dinámica -->
+                    @php
+                        $currLabel = match($abonoCurrency) {
+                            'VED' => 'Bolívares (Bs)',
+                            'COP' => 'Pesos Colombianos (COP$)',
+                            'USDT' => 'Binance USDT (₮)',
+                            default => 'Dólares ($ USD)',
+                        };
+                        $currSym = match($abonoCurrency) {
+                            'VED' => 'Bs',
+                            'COP' => 'COP$',
+                            'USDT' => '₮',
+                            default => '$',
+                        };
+                    @endphp
+                    <div class="space-y-1.5 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <label class="block text-xs font-bold text-slate-300 uppercase">
+                                Monto a Abonar en {{ $currLabel }} *
+                            </label>
+                            @if($abonoCurrency !== 'USD')
+                                <span class="text-[11px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                    Tasa: 1 USD = {{ number_format($abonoExchangeRate, 2) }} {{ $abonoCurrency }}
+                                </span>
+                            @endif
+                        </div>
+
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center font-black text-amber-400 text-sm">
+                                {{ $currSym }}
+                            </span>
+                            <input type="number" step="0.01" min="0.01" wire:model.live="abonoAmountCurrency"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-12 pr-3 py-2 text-base text-white font-black focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono">
+                        </div>
+
+                        <!-- Equivalencia en USD -->
+                        <div class="flex items-center justify-between text-xs pt-1">
+                            @if($abonoCurrency !== 'USD')
+                                <span class="text-slate-400">Descontará de la deuda del cliente:</span>
+                                <span class="font-black text-emerald-400 font-mono text-sm">
+                                    ${{ number_format($abonoAmountUsd, 2) }} USD
+                                </span>
+                            @else
+                                @if($config && ($config->bcv_rate ?? 0) > 0)
+                                    <span class="text-slate-400">Equivalente en Bolívares (BCV):</span>
+                                    <span class="font-black text-amber-400 font-mono text-sm">
+                                        Bs {{ number_format($abonoAmountUsd * $config->bcv_rate, 2) }}
+                                    </span>
+                                @endif
+                            @endif
+                        </div>
+                    </div>
+
+                    <!-- Subir Comprobante / Capture de Pago (Vaucher) -->
+                    @php
+                        $isCash = in_array($abonoMethod, ['cash_usd', 'cash_bs', 'cash_cop']);
+                    @endphp
+                    <div class="p-3.5 rounded-xl border {{ !$isCash ? 'bg-amber-950/20 border-amber-500/40' : 'bg-slate-950/60 border-slate-800' }} space-y-2">
+                        <div class="flex items-center justify-between">
+                            <label class="block text-xs font-bold {{ !$isCash ? 'text-amber-400' : 'text-slate-300' }} uppercase flex items-center space-x-1">
+                                <span>📎</span>
+                                <span>Capture del Bauche / Comprobante {{ !$isCash ? '(OBLIGATORIO) *' : '(Opcional en efectivo)' }}</span>
+                            </label>
+                            @if(!$isCash)
+                                <span class="text-[10px] font-black text-amber-400 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">
+                                    Requerido
+                                </span>
+                            @endif
+                        </div>
+
+                        <input type="file" wire:model="abonoProof" accept="image/*"
+                            class="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-amber-400 hover:file:bg-slate-700 cursor-pointer">
+
+                        <div wire:loading wire:target="abonoProof" class="text-xs text-amber-400 flex items-center space-x-1.5">
+                            <span class="animate-spin">⏳</span>
+                            <span>Cargando imagen del bauche...</span>
+                        </div>
+
+                        @if ($abonoProof)
+                            <div class="mt-2 flex items-center space-x-3 p-2 bg-slate-900 rounded-lg border border-slate-800">
+                                <img src="{{ $abonoProof->temporaryUrl() }}" class="w-14 h-14 object-cover rounded-lg border border-slate-700 shadow">
+                                <div class="text-xs">
+                                    <span class="text-emerald-400 font-bold block">✓ Comprobante listo para registrar</span>
+                                    <span class="text-[11px] text-slate-400">Se guardará junto con la transacción</span>
+                                </div>
+                            </div>
+                        @endif
+
+                        @error('abonoProof')
+                            <span class="text-red-400 text-xs font-bold block mt-1">⚠️ {{ $message }}</span>
+                        @enderror
+                    </div>
+
                     <!-- Referencia y Notas -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div>
                             <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Nº Referencia:</label>
-                            <input type="text" wire:model="abonoReference" placeholder="Últimos 4 dígitos..."
+                            <input type="text" wire:model="abonoReference" placeholder="Últimos 4 o 6 dígitos..."
                                 class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:ring-2 focus:ring-amber-500 focus:outline-none">
                         </div>
 
@@ -512,12 +598,16 @@
                     <!-- Botones -->
                     <div class="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
                         <button type="button" wire:click="$set('showAbonoModal', false)"
-                            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+                            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors cursor-pointer">
                             Cancelar
                         </button>
-                        <button type="submit"
-                            class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all shadow-md">
-                            Confirmar Abono
+                        <button type="submit" wire:loading.attr="disabled"
+                            class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all shadow-md cursor-pointer flex items-center space-x-2">
+                            <span wire:loading.remove wire:target="processAbono">Confirmar Abono</span>
+                            <span wire:loading wire:target="processAbono" class="flex items-center space-x-1">
+                                <span class="animate-spin">⏳</span>
+                                <span>Guardando...</span>
+                            </span>
                         </button>
                     </div>
                 </form>
@@ -600,6 +690,13 @@
                                         </span>
                                         @if($tx->notes)
                                             <span class="text-[10px] text-slate-500 italic block mt-0.5">{{ $tx->notes }}</span>
+                                        @endif
+                                        @if($tx->proof_image)
+                                            <a href="{{ asset('storage/' . $tx->proof_image) }}" target="_blank"
+                                                class="text-[11px] text-blue-400 hover:text-blue-300 font-bold flex items-center space-x-1 mt-1">
+                                                <span>📎</span>
+                                                <span>Ver Capture / Vaucher</span>
+                                            </a>
                                         @endif
                                     </div>
                                 </div>

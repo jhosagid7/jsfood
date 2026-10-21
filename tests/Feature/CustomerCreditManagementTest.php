@@ -5,10 +5,13 @@ namespace Tests\Feature;
 use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\UploadedFile;
 use Livewire\Livewire;
 use App\Models\User;
 use App\Models\Customer;
 use App\Models\Bank;
+use App\Models\Configuration;
 use App\Livewire\Customers\CustomerManager;
 use App\Livewire\Cashier\CashierRegister;
 use App\Models\Order;
@@ -131,10 +134,18 @@ class CustomerCreditManagementTest extends TestCase
     public function test_can_process_abono_and_decrease_balance(): void
     {
         Notification::fake();
+        Storage::fake('public');
+
+        Configuration::create([
+            'business_name' => 'Test Rest',
+            'bcv_rate' => 60.00,
+            'cop_rate' => 4100.00,
+        ]);
 
         $bank = Bank::create([
             'name' => 'Banesco Banco Universal',
             'type' => 'pago_movil',
+            'currency_code' => 'VED',
             'state' => true,
             'sort' => 1,
         ]);
@@ -148,12 +159,18 @@ class CustomerCreditManagementTest extends TestCase
             'credit_days' => 15,
         ]);
 
+        $voucher = UploadedFile::fake()->image('pago_movil.jpg');
+
         Livewire::actingAs($this->adminUser)
             ->test(CustomerManager::class)
             ->call('openAbonoModal', $customer->id)
             ->set('abonoAmountUsd', 25.00)
-            ->set('abonoMethod', 'pago_movil')
+            ->call('setAbonoMethod', 'pago_movil')
             ->set('abonoBankId', $bank->id)
+            // Verificar conversión automática a Bolívares: $25 * 60 = 1500 Bs
+            ->assertSet('abonoCurrency', 'VED')
+            ->assertSet('abonoAmountCurrency', 1500.00)
+            ->set('abonoProof', $voucher)
             ->set('abonoReference', 'REF-998877')
             ->call('processAbono')
             ->assertHasNoErrors();
@@ -165,10 +182,48 @@ class CustomerCreditManagementTest extends TestCase
             'customer_id' => $customer->id,
             'type' => 'payment_abono',
             'amount_usd' => 25.00,
+            'currency_code' => 'VED',
+            'amount_currency' => 1500.00,
             'reference' => 'REF-998877',
         ]);
 
         Notification::assertSentTo($customer, CreditPaymentReceivedNotification::class);
+    }
+
+    public function test_abono_requires_proof_image_for_digital_payments_but_not_cash(): void
+    {
+        Configuration::create([
+            'business_name' => 'Test Rest',
+            'bcv_rate' => 60.00,
+        ]);
+
+        $customer = Customer::create([
+            'name' => 'Ana Morosa',
+            'allow_credit' => true,
+            'credit_limit' => 100.00,
+            'current_balance' => 40.00,
+        ]);
+
+        // 1. Pago móvil sin capture debe fallar validación
+        Livewire::actingAs($this->adminUser)
+            ->test(CustomerManager::class)
+            ->call('openAbonoModal', $customer->id)
+            ->call('setAbonoMethod', 'pago_movil')
+            ->set('abonoAmountUsd', 10.00)
+            ->call('processAbono')
+            ->assertHasErrors(['abonoProof']);
+
+        // 2. Efectivo USD no requiere capture
+        Livewire::actingAs($this->adminUser)
+            ->test(CustomerManager::class)
+            ->call('openAbonoModal', $customer->id)
+            ->call('setAbonoMethod', 'cash_usd')
+            ->set('abonoAmountUsd', 10.00)
+            ->call('processAbono')
+            ->assertHasNoErrors();
+
+        $customer->refresh();
+        $this->assertEquals(30.00, $customer->current_balance);
     }
 
     public function test_cannot_delete_customer_with_active_debt(): void

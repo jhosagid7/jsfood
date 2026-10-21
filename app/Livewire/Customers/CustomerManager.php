@@ -4,6 +4,7 @@ namespace App\Livewire\Customers;
 
 use Livewire\Component;
 use Livewire\WithPagination;
+use Livewire\WithFileUploads;
 use Livewire\Attributes\Layout;
 use App\Models\Customer;
 use App\Models\Bank;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Log;
 class CustomerManager extends Component
 {
     use WithPagination;
+    use WithFileUploads;
 
     // Búsqueda y Filtros
     public string $search = '';
@@ -38,10 +40,14 @@ class CustomerManager extends Component
     public ?int $abonoCustomerId = null;
     public ?Customer $abonoCustomer = null;
     public float $abonoAmountUsd = 0.00;
+    public float $abonoAmountCurrency = 0.00;
+    public string $abonoCurrency = 'USD'; // 'USD', 'VED', 'COP', 'USDT'
+    public float $abonoExchangeRate = 1.0000;
     public string $abonoMethod = 'cash_usd';
     public ?int $abonoBankId = null;
     public string $abonoReference = '';
     public string $abonoNotes = '';
+    public $abonoProof = null;
 
     // Modal Historial / Estado de Cuenta
     public bool $showHistoryModal = false;
@@ -141,9 +147,109 @@ class CustomerManager extends Component
         $this->abonoAmountUsd = (float) $customer->current_balance;
         $this->abonoMethod = 'cash_usd';
         $this->abonoBankId = null;
+        $this->abonoCurrency = 'USD';
+        $this->abonoExchangeRate = 1.0000;
+        $this->abonoAmountCurrency = (float) $customer->current_balance;
         $this->abonoReference = '';
         $this->abonoNotes = '';
+        $this->abonoProof = null;
         $this->showAbonoModal = true;
+    }
+
+    public function setAbonoMethod(string $method): void
+    {
+        $this->abonoMethod = $method;
+        $this->syncAbonoCurrencyAndRates();
+    }
+
+    public function updatedAbonoMethod($method): void
+    {
+        $this->syncAbonoCurrencyAndRates();
+    }
+
+    public function updatedAbonoBankId($bankId): void
+    {
+        $this->syncAbonoCurrencyAndRates();
+    }
+
+    private function syncAbonoCurrencyAndRates(): void
+    {
+        $config = Configuration::first();
+        $bcvRate = (float) ($config->bcv_rate ?? 60.00);
+        $copRate = (float) ($config->cop_rate ?? 4100.00);
+        $binanceRate = (float) ($config->binance_rate ?? 1.00);
+
+        // Si se seleccionó un banco, tomar la moneda del banco si existe
+        $bank = $this->abonoBankId ? Bank::find($this->abonoBankId) : null;
+
+        if ($bank && in_array(strtoupper($bank->currency_code), ['VED', 'BS', 'VES'])) {
+            $this->abonoCurrency = 'VED';
+            $this->abonoExchangeRate = $bcvRate > 0 ? $bcvRate : 60.00;
+        } elseif ($bank && strtoupper($bank->currency_code) === 'COP') {
+            $this->abonoCurrency = 'COP';
+            $this->abonoExchangeRate = $copRate > 0 ? $copRate : 4100.00;
+        } elseif ($bank && in_array(strtoupper($bank->currency_code), ['USDT', 'BINANCE'])) {
+            $this->abonoCurrency = 'USDT';
+            $this->abonoExchangeRate = $binanceRate > 0 ? $binanceRate : 1.00;
+        } elseif ($this->abonoMethod === 'cash_bs' || $this->abonoMethod === 'pago_movil') {
+            $this->abonoCurrency = 'VED';
+            $this->abonoExchangeRate = $bcvRate > 0 ? $bcvRate : 60.00;
+            if (!$this->abonoBankId && $this->abonoMethod === 'pago_movil') {
+                $suggestedBank = Bank::where('type', 'pago_movil')->where('state', true)->first();
+                $this->abonoBankId = $suggestedBank?->id;
+            }
+        } elseif ($this->abonoMethod === 'cash_cop' || $this->abonoMethod === 'nequi') {
+            $this->abonoCurrency = 'COP';
+            $this->abonoExchangeRate = $copRate > 0 ? $copRate : 4100.00;
+            if (!$this->abonoBankId && $this->abonoMethod === 'nequi') {
+                $suggestedBank = Bank::where('type', 'nequi')->where('state', true)->first();
+                $this->abonoBankId = $suggestedBank?->id;
+            }
+        } elseif ($this->abonoMethod === 'binance_usdt') {
+            $this->abonoCurrency = 'USDT';
+            $this->abonoExchangeRate = $binanceRate > 0 ? $binanceRate : 1.00;
+            if (!$this->abonoBankId) {
+                $suggestedBank = Bank::where('type', 'binance')->where('state', true)->first();
+                $this->abonoBankId = $suggestedBank?->id;
+            }
+        } elseif ($this->abonoMethod === 'zelle') {
+            $this->abonoCurrency = 'USD';
+            $this->abonoExchangeRate = 1.0000;
+            if (!$this->abonoBankId) {
+                $suggestedBank = Bank::where('type', 'zelle')->where('state', true)->first();
+                $this->abonoBankId = $suggestedBank?->id;
+            }
+        } else {
+            $this->abonoCurrency = 'USD';
+            $this->abonoExchangeRate = 1.0000;
+        }
+
+        // Recalcular monto en la moneda elegida
+        if ($this->abonoCurrency === 'COP') {
+            $this->abonoAmountCurrency = round($this->abonoAmountUsd * $this->abonoExchangeRate, 0);
+        } else {
+            $this->abonoAmountCurrency = round($this->abonoAmountUsd * $this->abonoExchangeRate, 2);
+        }
+    }
+
+    public function updatedAbonoAmountCurrency($val): void
+    {
+        $amount = (float) $val;
+        if ($this->abonoExchangeRate > 0) {
+            $this->abonoAmountUsd = round($amount / $this->abonoExchangeRate, 2);
+        } else {
+            $this->abonoAmountUsd = round($amount, 2);
+        }
+    }
+
+    public function updatedAbonoAmountUsd($val): void
+    {
+        $amountUsd = (float) $val;
+        if ($this->abonoCurrency === 'COP') {
+            $this->abonoAmountCurrency = round($amountUsd * $this->abonoExchangeRate, 0);
+        } else {
+            $this->abonoAmountCurrency = round($amountUsd * $this->abonoExchangeRate, 2);
+        }
     }
 
     public function processAbono(): void
@@ -158,23 +264,64 @@ class CustomerManager extends Component
             return;
         }
 
-        if ($this->abonoAmountUsd > $customer->current_balance + 0.01) {
+        if ($this->abonoAmountUsd > $customer->current_balance + 0.05) {
             $this->dispatch('notify', message: "El monto a abonar no puede exceder la deuda de \${$customer->current_balance}", type: 'warning');
             return;
         }
 
+        $isCash = in_array($this->abonoMethod, ['cash_usd', 'cash_bs', 'cash_cop']);
+
+        // Validación obligatoria de comprobante si no es efectivo
+        if (!$isCash) {
+            $this->validate([
+                'abonoProof' => 'required|image|max:5120',
+            ], [
+                'abonoProof.required' => '⚠️ El capture o comprobante del pago es OBLIGATORIO para transferencias, pago móvil o punto de venta.',
+                'abonoProof.image' => 'El comprobante debe ser una imagen válida (JPG, PNG, WEBP).',
+                'abonoProof.max' => 'El comprobante no debe superar los 5MB de tamaño.',
+            ]);
+        } else {
+            if ($this->abonoProof) {
+                $this->validate([
+                    'abonoProof' => 'image|max:5120',
+                ]);
+            }
+        }
+
+        $proofPath = null;
+        if ($this->abonoProof) {
+            $proofPath = $this->abonoProof->store('proofs', 'public');
+        }
+
+        $finalAmountUsd = min($this->abonoAmountUsd, (float) $customer->current_balance);
+
         $user = auth()->user();
-        $bankName = $this->abonoBankId ? Bank::find($this->abonoBankId)?->name : null;
-        $notes = "Método: {$this->abonoMethod}" . ($bankName ? " ({$bankName})" : '') . ($this->abonoNotes ? " - {$this->abonoNotes}" : '');
+        $bank = $this->abonoBankId ? Bank::find($this->abonoBankId) : null;
+        $bankName = $bank?->name;
+
+        $currencySymbol = match($this->abonoCurrency) {
+            'VED' => 'Bs',
+            'COP' => 'COP$',
+            'USDT' => 'USDT',
+            default => '$',
+        };
+
+        $notes = "Método: {$this->abonoMethod}" 
+            . ($bankName ? " ({$bankName} - {$this->abonoCurrency})" : '') 
+            . " [Abonado: {$currencySymbol} " . number_format($this->abonoAmountCurrency, 2) . " a tasa " . number_format($this->abonoExchangeRate, 2) . "]"
+            . ($this->abonoNotes ? " - {$this->abonoNotes}" : '');
 
         // Registrar abono
         $tx = $customer->adjustBalance(
-            -$this->abonoAmountUsd,
+            -$finalAmountUsd,
             'payment_abono',
             null,
             $user?->id,
             $this->abonoReference ?: 'Abono en Caja',
-            $notes
+            $notes,
+            $this->abonoCurrency,
+            $this->abonoAmountCurrency,
+            $proofPath
         );
 
         // Envío de correo en segundo plano
@@ -187,8 +334,8 @@ class CustomerManager extends Component
         }
 
         $this->showAbonoModal = false;
-        $this->dispatch('notify', message: "Abono de \${$this->abonoAmountUsd} registrado exitosamente para {$customer->name}", type: 'success');
-        $this->reset(['abonoCustomerId', 'abonoCustomer', 'abonoAmountUsd', 'abonoReference', 'abonoNotes']);
+        $this->dispatch('notify', message: "✅ Abono de \${$finalAmountUsd} ({$currencySymbol} " . number_format($this->abonoAmountCurrency, 2) . ") registrado exitosamente para {$customer->name}", type: 'success');
+        $this->reset(['abonoCustomerId', 'abonoCustomer', 'abonoAmountUsd', 'abonoAmountCurrency', 'abonoReference', 'abonoNotes', 'abonoProof']);
     }
 
     public function openHistoryModal(int $id): void

@@ -457,22 +457,68 @@
                     </div>
 
                     <!-- Campos de Monto Recibido, Referencia y Comprobante de Pago -->
+                    @php
+                        $activeBank = $selectedBankId ? $banks->firstWhere('id', $selectedBankId) : null;
+                        $currSym = '$';
+                        $currName = 'USD';
+                        $rateCalc = 1.0;
+                        if (($activeBank && in_array(strtoupper($activeBank->currency_code), ['VED', 'BS', 'VES'])) || in_array($selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
+                            $currSym = 'Bs';
+                            $currName = 'Bolívares (BCV)';
+                            $rateCalc = (float) ($config->bcv_rate ?? 60.00);
+                        } elseif (($activeBank && strtoupper($activeBank->currency_code) === 'COP') || in_array($selectedPaymentMethod, ['cash_cop', 'nequi'])) {
+                            $currSym = 'COP$';
+                            $currName = 'Pesos COP';
+                            $rateCalc = (float) ($config->cop_rate ?? 4100.00);
+                        } elseif (($activeBank && in_array(strtoupper($activeBank->currency_code), ['USDT', 'BINANCE'])) || $selectedPaymentMethod === 'binance_usdt') {
+                            $currSym = '₮';
+                            $currName = 'USDT';
+                            $rateCalc = (float) ($config->binance_rate ?? 1.00);
+                        }
+                        $isCashOrCredit = in_array($selectedPaymentMethod, ['cash_usd', 'cash_ved', 'cash_cop', 'credit']);
+                        $requiresCapture = !$isCashOrCredit && in_array($selectedPaymentMethod, ['mobile_pay', 'zelle', 'binance_usdt', 'nequi']);
+                    @endphp
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
                         <div>
-                            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Monto a Cobrar:</label>
-                            <input type="number" step="0.01" wire:model="amountReceived"
-                                class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-base font-black text-amber-400 focus:ring-2 focus:ring-amber-500 focus:outline-none">
-                            <span class="text-[11px] text-slate-500">Monto total o parcial (abono).</span>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-bold text-slate-300 uppercase">Monto a Cobrar / Abonar:</label>
+                                <span class="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">{{ $currName }}</span>
+                            </div>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3 flex items-center font-black text-amber-400 text-sm">
+                                    {{ $currSym }}
+                                </span>
+                                <input type="number" step="0.01" wire:model.live="amountReceived"
+                                    class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-3 py-2 text-base font-black text-amber-400 focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono">
+                            </div>
+                            @if($currSym !== '$')
+                                @php
+                                    $equivUsd = $rateCalc > 0 ? ((float)$amountReceived / $rateCalc) : 0;
+                                @endphp
+                                <span class="text-[11px] text-emerald-400 font-mono block mt-1">
+                                    ≈ ${{ number_format($equivUsd, 2) }} USD (Tasa: {{ number_format($rateCalc, 2) }})
+                                </span>
+                            @else
+                                <span class="text-[11px] text-slate-500 block mt-1">Monto total o parcial (abono).</span>
+                            @endif
                         </div>
 
                         <div>
                             <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Número de Referencia:</label>
                             <input type="text" wire:model="paymentReference" placeholder="Ej: #123456 o últimos 4"
                                 class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                            <span class="text-[11px] text-slate-500 block mt-1">Código de aprobación o transferencia.</span>
                         </div>
 
                         <div>
-                            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Capture / Comprobante:</label>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-bold {{ $requiresCapture ? 'text-amber-400' : 'text-slate-300' }} uppercase">
+                                    Capture / Comprobante:
+                                </label>
+                                @if($requiresCapture)
+                                    <span class="text-[9px] font-black text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30">Obligatorio *</span>
+                                @endif
+                            </div>
                             <input type="file" wire:model="proofImage" accept="image/*"
                                 class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-amber-400 hover:file:bg-slate-700 cursor-pointer">
                             @if ($proofImage)
@@ -480,6 +526,9 @@
                                     <span>📸 Capture listo para guardar</span>
                                 </div>
                             @endif
+                            @error('proofImage')
+                                <span class="text-red-400 text-xs font-bold block mt-1">⚠️ {{ $message }}</span>
+                            @enderror
                         </div>
                     </div>
 

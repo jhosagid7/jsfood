@@ -121,8 +121,17 @@ class Customer extends Model
     /**
      * Registrar un cargo o abono a su cuenta corriente.
      */
-    public function adjustBalance(float $deltaUsd, string $type, ?int $orderId = null, ?int $userId = null, ?string $reference = null, ?string $notes = null): CustomerTransaction
-    {
+    public function adjustBalance(
+        float $deltaUsd, 
+        string $type, 
+        ?int $orderId = null, 
+        ?int $userId = null, 
+        ?string $reference = null, 
+        ?string $notes = null,
+        string $currencyCode = 'USD',
+        ?float $amountCurrency = null,
+        ?string $proofImage = null
+    ): CustomerTransaction {
         $this->current_balance += $deltaUsd;
         $this->save();
 
@@ -132,9 +141,10 @@ class Customer extends Model
             'user_id' => $userId,
             'type' => $type,
             'amount_usd' => abs($deltaUsd),
-            'currency_code' => 'USD',
-            'amount_currency' => abs($deltaUsd),
+            'currency_code' => $currencyCode,
+            'amount_currency' => $amountCurrency ?? abs($deltaUsd),
             'reference' => $reference,
+            'proof_image' => $proofImage,
             'notes' => $notes,
         ]);
     }

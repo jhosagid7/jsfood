@@ -113,6 +113,11 @@ class CashierRegister extends Component
         $this->recalculateRemaining();
     }
 
+    public function updatedSelectedBankId($bankId): void
+    {
+        $this->recalculateRemaining();
+    }
+
     public function updatedSelectedCustomerId($customerId): void
     {
         if (!$customerId) {
@@ -268,14 +273,25 @@ class CashierRegister extends Component
         $rate = 1.0000;
         $currencyCode = 'USD';
 
-        if ($this->selectedPaymentMethod === 'cash_ved' || $this->selectedPaymentMethod === 'mobile_pay') {
-            $rate = $config->bcv_rate ?? 60.00;
+        $bank = $this->selectedBankId ? Bank::find($this->selectedBankId) : null;
+
+        if ($bank && in_array(strtoupper($bank->currency_code), ['VED', 'BS', 'VES'])) {
+            $rate = (float) ($config->bcv_rate ?? 60.00);
+            $currencyCode = 'VED';
+        } elseif ($bank && strtoupper($bank->currency_code) === 'COP') {
+            $rate = (float) ($config->cop_rate ?? 4100.00);
+            $currencyCode = 'COP';
+        } elseif ($bank && in_array(strtoupper($bank->currency_code), ['USDT', 'BINANCE'])) {
+            $rate = (float) ($config->binance_rate ?? 1.00);
+            $currencyCode = 'USDT';
+        } elseif ($this->selectedPaymentMethod === 'cash_ved' || $this->selectedPaymentMethod === 'mobile_pay') {
+            $rate = (float) ($config->bcv_rate ?? 60.00);
             $currencyCode = 'VED';
         } elseif ($this->selectedPaymentMethod === 'cash_cop' || $this->selectedPaymentMethod === 'nequi') {
-            $rate = $config->cop_rate ?? 4100.00;
+            $rate = (float) ($config->cop_rate ?? 4100.00);
             $currencyCode = 'COP';
         } elseif ($this->selectedPaymentMethod === 'binance_usdt') {
-            $rate = $config->binance_rate ?? 1.00;
+            $rate = (float) ($config->binance_rate ?? 1.00);
             $currencyCode = 'USDT';
         }
 
@@ -283,6 +299,16 @@ class CashierRegister extends Component
         if ($amountInCurrency <= 0) {
             $this->dispatch('notify', message: "El monto del pago debe ser mayor a 0", type: 'warning');
             return;
+        }
+
+        // Si no es efectivo ni crédito, requerir comprobante si se paga con pago móvil / zelle
+        $isCashOrCredit = in_array($this->selectedPaymentMethod, ['cash_usd', 'cash_ved', 'cash_cop', 'credit']);
+        if (!$isCashOrCredit && in_array($this->selectedPaymentMethod, ['mobile_pay', 'zelle', 'binance_usdt', 'nequi'])) {
+            $this->validate([
+                'proofImage' => 'required|image|max:5120',
+            ], [
+                'proofImage.required' => '⚠️ El capture o comprobante del pago es OBLIGATORIO para transferencias, pago móvil o Zelle.',
+            ]);
         }
 
         // Si se ingresó en moneda local, calcular equivalente en USD
@@ -507,11 +533,19 @@ class CashierRegister extends Component
         $remainingUsd = max(0, $order->total_usd - $totalPaidUsd);
 
         $config = Configuration::first();
-        if (in_array($this->selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
-            $rate = $config->bcv_rate ?? 60.00;
+        $bank = $this->selectedBankId ? Bank::find($this->selectedBankId) : null;
+
+        if ($bank && in_array(strtoupper($bank->currency_code), ['VED', 'BS', 'VES'])) {
+            $rate = (float) ($config->bcv_rate ?? 60.00);
+            $this->amountReceived = round($remainingUsd * $rate, 2);
+        } elseif ($bank && strtoupper($bank->currency_code) === 'COP') {
+            $rate = (float) ($config->cop_rate ?? 4100.00);
+            $this->amountReceived = round($remainingUsd * $rate, 0);
+        } elseif (in_array($this->selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
+            $rate = (float) ($config->bcv_rate ?? 60.00);
             $this->amountReceived = round($remainingUsd * $rate, 2);
         } elseif (in_array($this->selectedPaymentMethod, ['cash_cop', 'nequi'])) {
-            $rate = $config->cop_rate ?? 4100.00;
+            $rate = (float) ($config->cop_rate ?? 4100.00);
             $this->amountReceived = round($remainingUsd * $rate, 0);
         } else {
             $this->amountReceived = round($remainingUsd, 2);
