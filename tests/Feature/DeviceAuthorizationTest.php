@@ -134,4 +134,44 @@ class DeviceAuthorizationTest extends TestCase
 
         $this->assertEquals('approved', $device->fresh()->status);
     }
+
+    public function test_restricted_mode_blocks_new_device_even_if_reusing_approved_dhcp_ip()
+    {
+        $waiter = User::where('email', 'mesonero1@jsfood.dev')->first() ?? User::factory()->create();
+        $this->actingAs($waiter);
+
+        // Habilitar modo restringido
+        \App\Models\Configuration::updateOrCreate([], [
+            'device_access_mode' => 'restricted',
+            'max_devices' => 10,
+        ]);
+
+        // Dispositivo anterior que fue aprobado en la IP 192.168.1.150
+        $oldDevice = DeviceAuthorization::create([
+            'uuid' => 'old-approved-device-uuid',
+            'name' => 'Celular Anterior Aprobado',
+            'ip_address' => '192.168.1.150',
+            'user_agent' => 'Mozilla/5.0 (Linux; Android 14)',
+            'status' => 'approved',
+            'last_accessed_at' => now()->subDay(),
+        ]);
+
+        // Nuevo teléfono se conecta a la misma IP (por DHCP) SIN cookie device_token
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => '192.168.1.150',
+            'HTTP_USER_AGENT' => 'Mozilla/5.0 (Linux; Android 14)',
+        ])->get('/tables');
+
+        // Debe ser bloqueado y redirigido a access.denied, NUNCA auto-aprobado
+        $response->assertRedirect();
+        $this->assertStringContainsString('access-denied', $response->headers->get('Location'));
+
+        // Se debe haber creado un nuevo registro pendiente
+        $newPending = DeviceAuthorization::where('uuid', '!=', 'old-approved-device-uuid')
+            ->where('ip_address', '192.168.1.150')
+            ->first();
+
+        $this->assertNotNull($newPending);
+        $this->assertEquals('pending', $newPending->status);
+    }
 }

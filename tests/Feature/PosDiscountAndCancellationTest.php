@@ -5,6 +5,10 @@ namespace Tests\Feature;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\Order;
+use App\Models\Table;
+use App\Models\Area;
+use App\Models\Category;
+use App\Models\Product;
 use App\Models\Configuration;
 use Livewire\Livewire;
 use App\Livewire\Cashier\CashierRegister;
@@ -477,6 +481,151 @@ class PosDiscountAndCancellationTest extends TestCase
         $this->assertNotNull($newOrder);
         $this->assertEquals(10.00, $newOrder->total_usd);
         $this->assertEquals(1, $newOrder->items()->count());
+    }
+
+    public function test_cashier_can_merge_split_table_accounts_into_single_account()
+    {
+        $area = Area::first();
+        $user = User::first();
+        $table = Table::create(['name' => 'Mesa Fusion', 'area_id' => $area->id, 'status' => 'occupied']);
+        $cat = Category::create(['name' => 'Comida Fusion', 'slug' => 'comida-fusion']);
+        $prod = Product::create(['name' => 'Pizza', 'price_usd' => 15.00, 'category_id' => $cat->id, 'slug' => 'pizza-fusion']);
+
+        $order1 = Order::create([
+            'table_id' => $table->id,
+            'area_id' => $area->id,
+            'user_id' => $user->id,
+            'service_type' => 'dine_in',
+            'account_label' => 'Cuenta 1',
+            'status' => 'pending',
+            'subtotal_usd' => 15.00,
+            'total_usd' => 15.00,
+        ]);
+        $order1->items()->create([
+            'product_id' => $prod->id,
+            'quantity' => 1,
+            'unit_price_usd' => 15.00,
+            'subtotal_usd' => 15.00,
+        ]);
+
+        $order2 = Order::create([
+            'table_id' => $table->id,
+            'area_id' => $area->id,
+            'user_id' => $user->id,
+            'service_type' => 'dine_in',
+            'account_label' => 'Cuenta 2',
+            'status' => 'pending',
+            'subtotal_usd' => 30.00,
+            'total_usd' => 30.00,
+        ]);
+        $order2->items()->create([
+            'product_id' => $prod->id,
+            'quantity' => 2,
+            'unit_price_usd' => 15.00,
+            'subtotal_usd' => 30.00,
+        ]);
+
+        $this->assertEquals(2, $table->activeOrders()->count());
+
+        Livewire::test(CashierRegister::class)
+            ->call('selectOrder', $order1->id)
+            ->call('mergeTableAccounts')
+            ->assertDispatched('notify');
+
+        // Ahora solo debe existir 1 cuenta con 3 pizzas ($45.00)
+        $this->assertEquals(1, $table->fresh()->activeOrders()->count());
+        $mergedOrder = $table->fresh()->activeOrders()->first();
+        $this->assertEquals(45.00, $mergedOrder->total_usd);
+        $this->assertEquals('Cuenta Unificada', $mergedOrder->account_label);
+    }
+
+    public function test_order_terminal_can_switch_accounts_and_merge_table_accounts()
+    {
+        $area = Area::first();
+        $user = User::first();
+        $table = Table::create(['name' => 'Mesa POS Switch', 'area_id' => $area->id, 'status' => 'occupied']);
+        $cat = Category::create(['name' => 'Bebidas POS', 'slug' => 'bebidas-pos']);
+        $prod = Product::create(['name' => 'Jugo', 'price_usd' => 5.00, 'category_id' => $cat->id, 'slug' => 'jugo-pos']);
+
+        $order1 = Order::create([
+            'table_id' => $table->id,
+            'area_id' => $area->id,
+            'user_id' => $user->id,
+            'service_type' => 'dine_in',
+            'account_label' => 'Cuenta A',
+            'status' => 'pending',
+            'subtotal_usd' => 5.00,
+            'total_usd' => 5.00,
+        ]);
+        $order1->items()->create([
+            'product_id' => $prod->id,
+            'quantity' => 1,
+            'unit_price_usd' => 5.00,
+            'subtotal_usd' => 5.00,
+        ]);
+
+        $order2 = Order::create([
+            'table_id' => $table->id,
+            'area_id' => $area->id,
+            'user_id' => $user->id,
+            'service_type' => 'dine_in',
+            'account_label' => 'Cuenta B',
+            'status' => 'pending',
+            'subtotal_usd' => 10.00,
+            'total_usd' => 10.00,
+        ]);
+        $order2->items()->create([
+            'product_id' => $prod->id,
+            'quantity' => 2,
+            'unit_price_usd' => 5.00,
+            'subtotal_usd' => 10.00,
+        ]);
+
+        Livewire::test(\App\Livewire\Pos\OrderTerminal::class, ['tableId' => $table->id])
+            ->call('switchAccount', $order2->id)
+            ->assertSet('orderId', $order2->id)
+            ->call('mergeTableAccounts')
+            ->assertDispatched('notify');
+
+        $this->assertEquals(1, $table->fresh()->activeOrders()->count());
+        $this->assertEquals(15.00, $table->fresh()->activeOrders()->first()->total_usd);
+    }
+
+    public function test_cashier_partial_payment_calculation_and_quick_fill_remaining()
+    {
+        $user = User::first();
+        $cat = Category::create(['name' => 'Cena', 'slug' => 'cena-partial']);
+        $prod = Product::create(['name' => 'Plato Principal', 'price_usd' => 10.00, 'category_id' => $cat->id, 'slug' => 'plato-partial']);
+
+        $order = Order::create([
+            'user_id' => $user->id,
+            'service_type' => 'takeout',
+            'account_label' => 'Para Llevar',
+            'status' => 'pending',
+            'subtotal_usd' => 10.00,
+            'total_usd' => 10.00,
+        ]);
+        $order->items()->create([
+            'product_id' => $prod->id,
+            'quantity' => 1,
+            'unit_price_usd' => 10.00,
+            'subtotal_usd' => 10.00,
+        ]);
+
+        // Cargar orden en caja: total $10.00.
+        // Registrar abono de $4.00
+        Livewire::test(CashierRegister::class, ['order_id' => $order->id])
+            ->call('selectOrder', $order->id)
+            ->assertSet('amountReceived', 10.00)
+            ->set('amountReceived', 4.00)
+            ->call('addPayment')
+            ->assertDispatched('notify')
+            // amountReceived debe recalcularse automáticamente a $6.00 (el restante para el siguiente pago)
+            ->assertSet('amountReceived', 6.00)
+            ->set('amountReceived', 1.00)
+            ->call('fillRemainingAmount')
+            // fillRemainingAmount debe restaurar el monto restante exacto ($6.00)
+            ->assertSet('amountReceived', 6.00);
     }
 }
 

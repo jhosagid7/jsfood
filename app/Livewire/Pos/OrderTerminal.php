@@ -39,7 +39,7 @@ class OrderTerminal extends Component
 
     public function mount($tableId = null)
     {
-        $this->tableId = $tableId ? (int) $tableId : null;
+        $this->tableId = $tableId ? (int) $tableId : (request()->query('table_id') ? (int) request()->query('table_id') : null);
         $orderIdParam = request()->query('order_id');
 
         if ($orderIdParam) {
@@ -401,6 +401,54 @@ class OrderTerminal extends Component
         $this->showSplitModal = false;
         $this->splitQuantities = [];
         $this->dispatch('notify', message: "Cuenta dividida exitosamente. Se creó '{$label}'.", type: 'success');
+    }
+
+    public function switchAccount(int $orderId): void
+    {
+        $order = Order::find($orderId);
+        if ($order) {
+            $this->orderId = $order->id;
+            if ($order->table_id) {
+                $this->tableId = $order->table_id;
+            }
+            $this->dispatch('notify', message: "Cambiado a {$order->account_label}", type: 'info');
+        }
+    }
+
+    public function mergeTableAccounts(): void
+    {
+        if (!$this->tableId) {
+            $this->dispatch('notify', message: "Solo se pueden unificar cuentas pertenecientes a una mesa", type: 'warning');
+            return;
+        }
+
+        $table = Table::with('activeOrders.items', 'activeOrders.payments')->find($this->tableId);
+        if (!$table || $table->activeOrders->count() <= 1) {
+            $this->dispatch('notify', message: "Esta mesa solo tiene una cuenta activa", type: 'info');
+            return;
+        }
+
+        $orders = $table->activeOrders()->orderBy('id')->get();
+        $mainOrder = $orders->first();
+
+        foreach ($orders->slice(1) as $secOrder) {
+            foreach ($secOrder->items as $item) {
+                $item->order_id = $mainOrder->id;
+                $item->save();
+            }
+            foreach ($secOrder->payments as $payment) {
+                $payment->order_id = $mainOrder->id;
+                $payment->save();
+            }
+            $secOrder->delete();
+        }
+
+        $mainOrder->account_label = 'Cuenta Unificada';
+        $mainOrder->calculateTotals();
+        $table->syncStatus();
+
+        $this->orderId = $mainOrder->id;
+        $this->dispatch('notify', message: "Todas las cuentas de {$table->name} se han unificado en una sola cuenta", type: 'success');
     }
 
     public function cancelOrder()

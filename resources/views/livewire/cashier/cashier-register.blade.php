@@ -92,13 +92,22 @@
                                     {{ $selectedOrder->account_label }}
                                 </span>
                             </div>
-                            <div class="flex items-center space-x-3 mt-1 text-xs text-slate-400">
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-400">
                                 <span class="font-mono">Factura/Orden: #{{ $selectedOrder->order_number }}</span>
                                 <span>•</span>
                                 <button type="button" wire:click="openSplitModal" class="text-purple-400 hover:text-purple-300 font-bold hover:underline flex items-center space-x-1 cursor-pointer">
                                     <span>🍽️</span>
                                     <span>Dividir por Ítems</span>
                                 </button>
+                                @if($selectedOrder->diningTable && $selectedOrder->diningTable->activeOrders()->count() > 1)
+                                    <span>•</span>
+                                    <button type="button" wire:click="mergeTableAccounts"
+                                        wire:confirm="¿Deseas unir todas las sub-cuentas de esta mesa en una sola cuenta consolidada?"
+                                        class="text-indigo-400 hover:text-indigo-300 font-black hover:underline flex items-center space-x-1 cursor-pointer">
+                                        <span>🔗</span>
+                                        <span>Unificar Cuentas (Volver a 1 Sola)</span>
+                                    </button>
+                                @endif
                                 <span>•</span>
                                 <button wire:click="cancelSelectedOrder" 
                                     wire:confirm="¿Estás seguro de cancelar o descartar esta orden? Esta acción no se puede deshacer."
@@ -187,6 +196,14 @@
                                 </span>
                             </div>
                             <div class="flex items-center space-x-2">
+                                @if($selectedOrder->diningTable && $selectedOrder->diningTable->activeOrders()->count() > 1)
+                                    <button type="button" wire:click="mergeTableAccounts"
+                                        wire:confirm="¿Deseas unir todas las sub-cuentas de esta mesa en una sola cuenta consolidada?"
+                                        class="px-2.5 py-1 rounded-xl bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/40 text-xs font-bold flex items-center space-x-1.5 transition-all shadow-sm cursor-pointer">
+                                        <span>🔗</span>
+                                        <span>Unificar Cuentas</span>
+                                    </button>
+                                @endif
                                 <button type="button" wire:click="openSplitModal"
                                     class="px-2.5 py-1 rounded-xl bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/40 text-xs font-bold flex items-center space-x-1.5 transition-all shadow-sm cursor-pointer">
                                     <span>🍽️</span>
@@ -487,6 +504,13 @@
                         $isCashOrCredit = in_array($selectedPaymentMethod, ['cash_usd', 'cash_ved', 'cash_cop', 'credit']);
                         $requiresCapture = !$isCashOrCredit;
                     @endphp
+                    @php
+                        $orderPendingUsd = $totalPaidSoFar > 0 ? $remainingToPay : $selectedOrder->total_usd;
+                        $enteredInUsd = ($currSym === '$' || $currSym === '₮' || $rateCalc <= 0) ? (float)$amountReceived : ((float)$amountReceived / $rateCalc);
+                        $willRemainUsd = max(0, $orderPendingUsd - $enteredInUsd);
+                        $willRemainInCurr = $willRemainUsd * $rateCalc;
+                        $pendingInCurr = $orderPendingUsd * $rateCalc;
+                    @endphp
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
                         <div>
                             <div class="flex items-center justify-between mb-1">
@@ -501,70 +525,33 @@
                                     style="background-color: #0f172a !important; color: #fbbf24 !important;"
                                     class="w-full bg-slate-900 border-0 px-3 py-2 text-base font-black text-amber-400 focus:ring-0 focus:outline-none font-mono">
                             </div>
+
                             @if($currSym !== '$')
-                                @php
-                                    $equivUsd = $rateCalc > 0 ? ((float)$amountReceived / $rateCalc) : 0;
-                                @endphp
                                 <span class="text-[11px] text-emerald-400 font-mono block mt-1">
-                                    ≈ ${{ number_format($equivUsd, 2) }} USD (Tasa: {{ number_format($rateCalc, 2) }})
+                                    ≈ ${{ number_format($enteredInUsd, 2) }} USD (Tasa: {{ number_format($rateCalc, 2) }})
                                 </span>
-                            @else
-                                <span class="text-[11px] text-slate-500 block mt-1">Monto total o parcial (abono).</span>
                             @endif
-                        </div>
 
-                        <div>
-                            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Número de Referencia:</label>
-                            <input type="text" wire:model="paymentReference" placeholder="Ej: #123456 o últimos 4"
-                                class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500 focus:outline-none">
-                            <span class="text-[11px] text-slate-500 block mt-1">Código de aprobación o transferencia.</span>
-                        </div>
-
-                        <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <label class="block text-xs font-bold {{ $requiresCapture ? 'text-amber-400' : 'text-slate-300' }} uppercase">
-                                    Capture / Comprobante:
-                                </label>
-                                @if($requiresCapture)
-                                    <span class="text-[9px] font-black text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30">Obligatorio *</span>
-                                @endif
-                            </div>
-                            <input type="file" wire:model="proofImage" accept="image/*"
-                                class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-amber-400 hover:file:bg-slate-700 cursor-pointer">
-                            @if ($proofImage)
-                                <div class="mt-1 flex items-center space-x-2 text-[10px] text-emerald-400 font-bold">
-                                    <span>📸 Capture listo para guardar</span>
+                            @if((float)$amountReceived > 0 && $enteredInUsd < ($orderPendingUsd - 0.01))
+                                <div class="mt-1.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] space-y-0.5">
+                                    <span class="text-amber-300 font-bold block">
+                                        💵 Abono Parcial: ${{ number_format($enteredInUsd, 2) }} USD
+                                    </span>
+                                    <span class="text-slate-300 block">
+                                        Resta tras este abono: <strong class="text-emerald-400">${{ number_format($willRemainUsd, 2) }} USD</strong>
+                                        @if($currSym !== '$')
+                                            ({{ $currSym }} {{ number_format($willRemainInCurr, 2) }})
+                                        @endif
+                                    </span>
                                 </div>
                             @endif
-                            @error('proofImage')
-                                <span class="text-red-400 text-xs font-bold block mt-1">⚠️ {{ $message }}</span>
-                            @enderror
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
-                        <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <label class="block text-xs font-bold text-slate-300 uppercase">Monto a Cobrar / Abonar:</label>
-                                <span class="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">{{ $currName }}</span>
+
+                            <div class="mt-1 flex items-center justify-between">
+                                <button type="button" wire:click="fillRemainingAmount"
+                                    class="text-[11px] font-bold text-amber-400 hover:text-amber-300 underline cursor-pointer">
+                                    ⚡ Cobrar Restante ({{ $currSym }} {{ number_format($pendingInCurr, 2) }})
+                                </button>
                             </div>
-                            <div class="flex rounded-xl overflow-hidden border border-slate-800 bg-slate-900 focus-within:ring-2 focus-within:ring-amber-500 focus-within:border-amber-500 transition-all shadow-inner">
-                                <span class="inline-flex items-center justify-center px-3 bg-slate-800 text-amber-400 font-black text-sm border-r border-slate-800 shrink-0 select-none">
-                                    {{ $currSym }}
-                                </span>
-                                <input type="number" step="0.01" wire:model.live="amountReceived"
-                                    style="background-color: #0f172a !important; color: #fbbf24 !important;"
-                                    class="w-full bg-slate-900 border-0 px-3 py-2 text-base font-black text-amber-400 focus:ring-0 focus:outline-none font-mono">
-                            </div>
-                            @if($currSym !== '$')
-                                @php
-                                    $equivUsd = $rateCalc > 0 ? ((float)$amountReceived / $rateCalc) : 0;
-                                @endphp
-                                <span class="text-[11px] text-emerald-400 font-mono block mt-1">
-                                    ≈ ${{ number_format($equivUsd, 2) }} USD (Tasa: {{ number_format($rateCalc, 2) }})
-                                </span>
-                            @else
-                                <span class="text-[11px] text-slate-500 block mt-1">Monto total o parcial (abono).</span>
-                            @endif
                         </div>
 
                         <div>

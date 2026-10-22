@@ -139,7 +139,7 @@ class TableMap extends Component
 
     public function mergeTableAccounts(int $tableId)
     {
-        $table = Table::with('activeOrders.items')->find($tableId);
+        $table = Table::with('activeOrders.items', 'activeOrders.payments')->find($tableId);
         if (!$table || $table->activeOrders->count() <= 1) {
             $this->dispatch('notify', message: "Se requieren al menos 2 cuentas activas para unificarlas", type: 'warning');
             return;
@@ -148,11 +148,15 @@ class TableMap extends Component
         $orders = $table->activeOrders()->orderBy('id')->get();
         $mainOrder = $orders->first();
 
-        // Mover todos los ítems de las cuentas secundarias a la cuenta principal
+        // Mover todos los ítems y pagos de las cuentas secundarias a la cuenta principal
         foreach ($orders->slice(1) as $secondaryOrder) {
             foreach ($secondaryOrder->items as $item) {
                 $item->order_id = $mainOrder->id;
                 $item->save();
+            }
+            foreach ($secondaryOrder->payments as $payment) {
+                $payment->order_id = $mainOrder->id;
+                $payment->save();
             }
             $secondaryOrder->delete();
         }

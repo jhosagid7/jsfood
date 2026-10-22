@@ -50,6 +50,27 @@
         </span>
     </div>
 
+    <!-- Barra de Selección de Sub-cuentas y Unificación (cuando hay más de 1 cuenta en la mesa) -->
+    @if($currentOrder?->diningTable && $currentOrder->diningTable->activeOrders()->count() > 1)
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 mb-4 flex flex-wrap items-center justify-between gap-2 shadow-md">
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs font-bold text-slate-400">Cuentas en esta Mesa:</span>
+                @foreach($currentOrder->diningTable->activeOrders as $subAcc)
+                    <button type="button" wire:click="switchAccount({{ $subAcc->id }})"
+                        class="px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer {{ $subAcc->id === $orderId ? 'bg-amber-500 text-slate-950 shadow-md ring-2 ring-amber-500/50' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">
+                        {{ $subAcc->account_label }} (${{ number_format($subAcc->total_usd, 2) }})
+                    </button>
+                @endforeach
+            </div>
+            <button type="button" wire:click="mergeTableAccounts"
+                wire:confirm="¿Deseas unir todas las sub-cuentas de esta mesa en una sola cuenta unificada?"
+                class="px-3 py-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 text-purple-200 border border-purple-700/60 font-bold text-xs flex items-center space-x-1.5 transition-all cursor-pointer">
+                <span>🔗</span>
+                <span>Unificar Cuentas (Volver a 1 Sola)</span>
+            </button>
+        </div>
+    @endif
+
     <!-- Contenido Dividido: Catálogo a la Izquierda / Comanda a la Derecha -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
         
@@ -276,6 +297,15 @@
                                 class="w-full py-2.5 px-3 rounded-xl bg-purple-950/70 hover:bg-purple-900 border border-purple-700/60 text-purple-200 font-bold text-xs flex items-center justify-center space-x-1.5 transition-all shadow-sm cursor-pointer">
                                 <span>✂️</span>
                                 <span>Dividir Cuenta (Separar Platos a Otra Cuenta)</span>
+                            </button>
+                        @endif
+
+                        @if($currentOrder?->diningTable && $currentOrder->diningTable->activeOrders()->count() > 1)
+                            <button type="button" wire:click="mergeTableAccounts"
+                                wire:confirm="¿Deseas unir todas las sub-cuentas de esta mesa en una sola cuenta unificada?"
+                                class="w-full py-2.5 px-3 rounded-xl bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/60 text-indigo-200 font-bold text-xs flex items-center justify-center space-x-1.5 transition-all shadow-sm cursor-pointer">
+                                <span>🔗</span>
+                                <span>Unificar Cuentas de la Mesa (Volver a 1 Sola)</span>
                             </button>
                         @endif
 

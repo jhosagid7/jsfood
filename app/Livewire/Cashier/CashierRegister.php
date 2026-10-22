@@ -497,6 +497,49 @@ class CashierRegister extends Component
         $this->dispatch('notify', message: "Cuenta dividida entre {$persons}: cuota de \${$amountPerPersonUsd} USD ({$curr['symbol']} " . number_format($this->amountReceived, 2) . ") c/u", type: 'info');
     }
 
+    public function fillRemainingAmount(): void
+    {
+        $this->recalculateRemaining();
+    }
+
+    public function mergeTableAccounts(): void
+    {
+        if (!$this->selectedOrderId) return;
+        $order = Order::with('diningTable.activeOrders.items', 'diningTable.activeOrders.payments')->find($this->selectedOrderId);
+        if (!$order || !$order->diningTable) {
+            $this->dispatch('notify', message: "Solo se pueden unificar cuentas pertenecientes a una mesa de salón", type: 'warning');
+            return;
+        }
+
+        $table = $order->diningTable;
+        $orders = $table->activeOrders()->orderBy('id')->get();
+        if ($orders->count() <= 1) {
+            $this->dispatch('notify', message: "Esta mesa solo tiene una cuenta activa", type: 'info');
+            return;
+        }
+
+        $mainOrder = $orders->first();
+
+        foreach ($orders->slice(1) as $secOrder) {
+            foreach ($secOrder->items as $item) {
+                $item->order_id = $mainOrder->id;
+                $item->save();
+            }
+            foreach ($secOrder->payments as $payment) {
+                $payment->order_id = $mainOrder->id;
+                $payment->save();
+            }
+            $secOrder->delete();
+        }
+
+        $mainOrder->account_label = 'Cuenta Unificada';
+        $mainOrder->calculateTotals();
+        $table->syncStatus();
+
+        $this->selectOrder($mainOrder->id);
+        $this->dispatch('notify', message: "Todas las cuentas de {$table->name} se han unificado en una sola cuenta", type: 'success');
+    }
+
     public function toggleItemsDetail(): void
     {
         $this->showItemsDetail = !$this->showItemsDetail;

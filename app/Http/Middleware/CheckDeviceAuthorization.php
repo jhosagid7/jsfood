@@ -41,31 +41,33 @@ class CheckDeviceAuthorization
             }
         }
 
-        // FINGERPRINT FALLBACK: If no device found by token, find existing device by IP/Subnet + UA
-        // This prevents duplication from mobile apps, localhost/IPv6, or router DHCP changes.
+        $config = \App\Models\Configuration::first();
+        $isRestricted = ($config && $config->device_access_mode === 'restricted');
+        $clientIp = $request->ip();
+        $isLocalServer = in_array($clientIp, ['127.0.0.1', '::1', 'localhost']);
+
+        // FINGERPRINT FALLBACK: If no device found by token, verify fingerprint safely
         if (!$device) {
-            $clientIp = $request->ip();
             $ua = $request->userAgent() ?? 'Unknown';
 
-            // 1. Check exact IP + UA (both approved, rejected, or pending)
-            $device = \App\Models\DeviceAuthorization::where('ip_address', $clientIp)
+            // 1. Siempre verificar si coincide con un dispositivo RECHAZADO / BLOQUEADO (evita evasión de bloqueo limpiando cookies)
+            $rejectedDevice = \App\Models\DeviceAuthorization::where('status', 'rejected')
+                ->where('ip_address', $clientIp)
                 ->where('user_agent', $ua)
                 ->orderBy('last_accessed_at', 'desc')
                 ->first();
 
-            // 2. Localhost / Loopback deduplication (127.0.0.1, ::1)
-            if (!$device && ($clientIp === '127.0.0.1' || $clientIp === '::1' || $clientIp === 'localhost')) {
+            if ($rejectedDevice) {
+                $device = $rejectedDevice;
+            } elseif ($isLocalServer) {
+                // 2. En el servidor local (127.0.0.1, ::1), reutilizar dispositivo local para consola admin
                 $device = \App\Models\DeviceAuthorization::whereIn('ip_address', ['127.0.0.1', '::1'])
                     ->orderBy('last_accessed_at', 'desc')
                     ->first();
-            }
-
-            // 3. Subnet fallback: If client has same UA and accessed recently on same /24 subnet (DHCP change)
-            if (!$device && filter_var($clientIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                $subnetPrefix = substr($clientIp, 0, strrpos($clientIp, '.') + 1);
-                $device = \App\Models\DeviceAuthorization::where('ip_address', 'like', $subnetPrefix . '%')
+            } elseif (!$isRestricted) {
+                // 3. SOLO en modo abierto (NO restringido), permitir deduplicación por IP exacta y UA
+                $device = \App\Models\DeviceAuthorization::where('ip_address', $clientIp)
                     ->where('user_agent', $ua)
-                    ->where('last_accessed_at', '>=', now()->subDays(7))
                     ->orderBy('last_accessed_at', 'desc')
                     ->first();
             }
@@ -86,9 +88,6 @@ class CheckDeviceAuthorization
         }
 
         if (!$device) {
-            $config = \App\Models\Configuration::first();
-            $isRestricted = ($config && $config->device_access_mode === 'restricted');
-            $isLocalServer = in_array($request->ip(), ['127.0.0.1', '::1', 'localhost']);
             
             // OPTIMIZATION: If it's an API request, we don't have a token, and we are NOT in restricted mode,
             // do NOT create a new device record.

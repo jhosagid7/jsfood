@@ -159,7 +159,7 @@ class CustomerCreditManagementTest extends TestCase
             'credit_days' => 15,
         ]);
 
-        $voucher = UploadedFile::fake()->image('pago_movil.jpg');
+        $voucher = UploadedFile::fake()->create('pago_movil.jpg', 50, 'image/jpeg');
 
         Livewire::actingAs($this->adminUser)
             ->test(CustomerManager::class)

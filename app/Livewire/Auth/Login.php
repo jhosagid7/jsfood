@@ -12,7 +12,7 @@ class Login extends Component
 {
     public string $email = '';
     public string $password = '';
-    public bool $remember = false;
+    public bool $remember = true;
 
     protected $rules = [
         'email' => 'required|email',
@@ -36,7 +36,7 @@ class Login extends Component
         $user = User::where('email', $email)->first();
 
         if ($user) {
-            Auth::login($user);
+            Auth::login($user, remember: true);
             session()->regenerate();
             return $this->redirectBasedOnRole($user);
         }
