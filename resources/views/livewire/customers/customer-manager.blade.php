@@ -608,12 +608,32 @@
                         </div>
 
                         @if ($abonoProof)
-                            <div class="mt-2 flex items-center space-x-3 p-2 bg-slate-900 rounded-lg border border-slate-800">
-                                <img src="{{ $abonoProof->temporaryUrl() }}" class="w-14 h-14 object-cover rounded-lg border border-slate-700 shadow">
-                                <div class="text-xs">
-                                    <span class="text-emerald-400 font-bold block">✓ Comprobante listo para registrar</span>
-                                    <span class="text-[11px] text-slate-400">Se guardará junto con la transacción</span>
+                            <div class="mt-2 flex items-center justify-between p-2 bg-slate-900 rounded-xl border border-slate-800">
+                                <div class="flex items-center space-x-3 min-w-0">
+                                    <a href="{{ $abonoProof->temporaryUrl() }}" target="_blank" title="Clic para ver tamaño completo"
+                                        class="shrink-0 relative group block overflow-hidden rounded-lg border border-slate-700 hover:border-amber-500 transition-all cursor-pointer"
+                                        style="width: 48px; height: 48px; max-width: 48px; max-height: 48px;">
+                                        <img src="{{ $abonoProof->temporaryUrl() }}"
+                                            alt="Comprobante"
+                                            style="width: 48px !important; height: 48px !important; max-width: 48px !important; max-height: 48px !important; min-width: 48px !important; min-height: 48px !important; object-fit: cover !important; display: block !important;">
+                                        <span class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-opacity">🔍</span>
+                                    </a>
+                                    <div class="min-w-0 text-xs space-y-0.5">
+                                        <span class="text-emerald-400 font-bold block truncate flex items-center space-x-1">
+                                            <span>✓</span>
+                                            <span>Comprobante cargado</span>
+                                        </span>
+                                        <a href="{{ $abonoProof->temporaryUrl() }}" target="_blank" class="text-[11px] text-blue-400 hover:underline block truncate">
+                                            Ver imagen completa ↗
+                                        </a>
+                                    </div>
                                 </div>
+
+                                <button type="button" wire:click="$set('abonoProof', null)"
+                                    class="px-2 py-1 rounded-lg bg-red-950/40 text-red-400 hover:bg-red-900/60 hover:text-red-300 text-xs font-bold border border-red-900/40 transition-colors shrink-0 cursor-pointer"
+                                    title="Quitar comprobante">
+                                    ✕ Quitar
+                                </button>
                             </div>
                         @endif
 
