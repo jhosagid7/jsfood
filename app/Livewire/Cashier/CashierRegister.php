@@ -161,11 +161,13 @@ class CashierRegister extends Component
         if ($bank) {
             $curr = strtoupper(trim($bank->currency_code));
             if (in_array($curr, ['VED', 'BS', 'VES'])) {
+                $isBinanceRate = str_contains(strtolower($bank->name), 'binance') || str_contains(strtolower($bank->name), 'paralelo');
+                $appliedRate = $isBinanceRate ? ($binanceRate > 0 ? $binanceRate : 70.00) : ($bcvRate > 0 ? $bcvRate : 60.00);
                 return [
                     'code' => 'VED',
-                    'name' => 'Bolívares (BCV)',
+                    'name' => $isBinanceRate ? 'Bolívares (Binance P2P)' : 'Bolívares (BCV)',
                     'symbol' => 'Bs',
-                    'rate' => $bcvRate > 0 ? $bcvRate : 60.00,
+                    'rate' => $appliedRate,
                     'bank' => $bank,
                 ];
             } elseif ($curr === 'COP') {
@@ -179,9 +181,9 @@ class CashierRegister extends Component
             } elseif (in_array($curr, ['USDT', 'BINANCE'])) {
                 return [
                     'code' => 'USDT',
-                    'name' => 'Binance USDT (₮)',
+                    'name' => 'Binance USDT (Cripto 1:1)',
                     'symbol' => '₮',
-                    'rate' => $binanceRate > 0 ? $binanceRate : 1.00,
+                    'rate' => 1.0000,
                     'bank' => $bank,
                 ];
             } else {
@@ -215,9 +217,9 @@ class CashierRegister extends Component
         } elseif ($this->selectedPaymentMethod === 'binance_usdt') {
             return [
                 'code' => 'USDT',
-                'name' => 'Binance USDT (₮)',
+                'name' => 'Binance USDT (Cripto 1:1)',
                 'symbol' => '₮',
-                'rate' => $binanceRate > 0 ? $binanceRate : 1.00,
+                'rate' => 1.0000,
                 'bank' => null,
             ];
         }

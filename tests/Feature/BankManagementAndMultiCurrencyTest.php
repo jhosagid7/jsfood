@@ -33,9 +33,15 @@ class BankManagementAndMultiCurrencyTest extends TestCase
             'restaurant_name' => 'JS Food Gourmet',
             'bcv_rate' => 60.00,
             'cop_rate' => 4100.00,
-            'binance_rate' => 1.00,
-            'currency_mode' => 'USD',
+            'binance_rate' => 70.00,
+            'currency_mode' => 'multi',
+            'primary_currency_code' => 'USD',
         ]);
+
+        \App\Models\Currency::create(['code' => 'USD', 'name' => 'Dólar Americano', 'symbol' => '$', 'exchange_rate' => 1.0, 'is_primary' => true]);
+        \App\Models\Currency::create(['code' => 'VED', 'name' => 'Bolívar Digital', 'symbol' => 'Bs', 'exchange_rate' => 60.0, 'is_primary' => false]);
+        \App\Models\Currency::create(['code' => 'COP', 'name' => 'Peso Colombiano', 'symbol' => 'COP$', 'exchange_rate' => 4100.0, 'is_primary' => false]);
+        \App\Models\Currency::create(['code' => 'USDT', 'name' => 'Binance USDT', 'symbol' => '₮', 'exchange_rate' => 1.0, 'is_primary' => false]);
     }
 
     public function test_bank_manager_screen_renders_for_admin(): void
@@ -44,6 +50,76 @@ class BankManagementAndMultiCurrencyTest extends TestCase
             ->get(route('settings.banks'))
             ->assertStatus(200)
             ->assertSee('Bancos y Monedas');
+    }
+
+    public function test_can_change_primary_currency(): void
+    {
+        Livewire::actingAs($this->adminUser)
+            ->test(BankManager::class)
+            ->set('primaryCurrency', 'VED')
+            ->call('setPrimaryCurrency')
+            ->assertDispatched('notify');
+
+        $config = Configuration::first();
+        $this->assertEquals('VED', $config->primary_currency_code);
+        $this->assertTrue(\App\Models\Currency::where('code', 'VED')->value('is_primary'));
+        $this->assertFalse(\App\Models\Currency::where('code', 'USD')->value('is_primary'));
+    }
+
+    public function test_binance_pay_usdt_has_1_to_1_usd_parity_in_cashier(): void
+    {
+        $bankUsdt = Bank::create([
+            'name' => 'Binance Pay USDT',
+            'type' => 'binance',
+            'currency_code' => 'USDT',
+            'account_holder' => 'JS Food Cripto',
+            'account_number' => '123456789',
+            'state' => true,
+        ]);
+
+        $category = Category::create([
+            'name' => 'Postres',
+            'slug' => 'postres',
+            'color' => '#ec4899',
+        ]);
+
+        $product = Product::create([
+            'category_id' => $category->id,
+            'name' => 'Cheesecake',
+            'price_usd' => 15.00,
+            'is_active' => true,
+        ]);
+
+        $order = Order::create([
+            'order_number' => 'ORD-TEST-USDT',
+            'user_id' => $this->adminUser->id,
+            'type' => 'takeout',
+            'status' => 'pending',
+            'subtotal_usd' => 15.00,
+            'total_usd' => 15.00,
+        ]);
+
+        OrderItem::create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'unit_price_usd' => 15.00,
+            'subtotal_usd' => 15.00,
+            'total_price_usd' => 15.00,
+        ]);
+
+        $component = Livewire::actingAs($this->adminUser)
+            ->test(CashierRegister::class)
+            ->call('selectOrder', $order->id)
+            ->call('selectBank', $bankUsdt->id);
+
+        $details = $component->instance()->getActiveCurrencyDetails();
+        $this->assertEquals('USDT', $details['code']);
+        $this->assertEquals('₮', $details['symbol']);
+        $this->assertEquals(1.0000, $details['rate']);
+
+        // Remaining amount should be $15 USD * 1 = 15.00 USDT (NOT 15 * 1006.2!)
+        $this->assertEquals(15.00, (float) $component->get('amountReceived'));
     }
 
     public function test_can_update_global_exchange_rates(): void

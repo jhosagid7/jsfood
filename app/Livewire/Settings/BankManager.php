@@ -7,15 +7,19 @@ use Livewire\Attributes\Layout;
 use App\Models\Bank;
 use App\Models\Configuration;
 use App\Models\Currency;
+use App\Helpers\CurrencyHelper;
 
 #[Layout('layouts.app')]
 class BankManager extends Component
 {
-    // Tasas de Cambio Globales
-    public float $bcvRate = 60.00;
-    public float $copRate = 4100.00;
-    public float $binanceRate = 1.00;
-    public string $currencyMode = 'multi';
+    // Moneda Principal y Modo de Moneda
+    public string $primaryCurrency = 'USD';
+    public string $currencyMode = 'multi'; // 'multi' o 'single'
+
+    // Tasas de Cambio Globales de Referencia (Base USD)
+    public float $bcvRate = 60.00;      // Tasa Oficial BCV en Bolívares (Bs / USD)
+    public float $binanceRate = 70.00;  // Tasa Paralela / Binance P2P en Bolívares (Bs / USD)
+    public float $copRate = 4100.00;    // Tasa Pesos Colombianos (COP / USD)
 
     // Modal Crear / Editar Cuenta Bancaria
     public bool $showBankModal = false;
@@ -51,9 +55,45 @@ class BankManager extends Component
         if ($config) {
             $this->bcvRate = (float) ($config->bcv_rate ?? 60.00);
             $this->copRate = (float) ($config->cop_rate ?? 4100.00);
-            $this->binanceRate = (float) ($config->binance_rate ?? 1.00);
+            $this->binanceRate = (float) ($config->binance_rate ?? 70.00);
             $this->currencyMode = $config->currency_mode ?? 'multi';
+            $this->primaryCurrency = $config->primary_currency_code ?? 'USD';
+        } else {
+            $primary = Currency::where('is_primary', true)->first();
+            $this->primaryCurrency = $primary ? $primary->code : 'USD';
         }
+    }
+
+    public function setPrimaryCurrency(?string $code = null): void
+    {
+        $target = $code ?: $this->primaryCurrency;
+        if (!$target) return;
+
+        Currency::query()->update(['is_primary' => false]);
+        Currency::where('code', $target)->update(['is_primary' => true]);
+
+        $config = Configuration::first() ?? new Configuration();
+        $config->primary_currency_code = $target;
+        $config->save();
+
+        $this->primaryCurrency = $target;
+        CurrencyHelper::clearCache();
+
+        $this->dispatch('notify', message: "✅ Moneda principal del sistema establecida como '{$target}'", type: 'success');
+    }
+
+    public function toggleCurrencyMode(): void
+    {
+        $this->currencyMode = ($this->currencyMode === 'multi') ? 'single' : 'multi';
+        $config = Configuration::first() ?? new Configuration();
+        $config->currency_mode = $this->currencyMode;
+        $config->save();
+
+        $msg = ($this->currencyMode === 'multi') 
+            ? 'Modo Multimoneda activado (cobro en USD, Bs, COP y USDT habilitado).' 
+            : 'Modo Moneda Única activado (solo se procesarán operaciones en la moneda principal).';
+
+        $this->dispatch('notify', message: $msg, type: 'info');
     }
 
     public function saveRates(): void
@@ -69,13 +109,18 @@ class BankManager extends Component
         $config->cop_rate = $this->copRate;
         $config->binance_rate = $this->binanceRate;
         $config->currency_mode = $this->currencyMode;
+        $config->primary_currency_code = $this->primaryCurrency;
         $config->save();
 
-        // Sincronizar también la tabla `currencies`
+        // Sincronizar tabla `currencies` respecto a la base USD:
+        // VED se sincroniza con la tasa oficial BCV
         Currency::where('code', 'VED')->update(['exchange_rate' => $this->bcvRate]);
         Currency::where('code', 'COP')->update(['exchange_rate' => $this->copRate]);
-        Currency::where('code', 'USDT')->update(['exchange_rate' => $this->binanceRate]);
+        // USDT es una stablecoin 1:1 con el Dólar ($1 USD = 1 USDT)
+        Currency::where('code', 'USDT')->update(['exchange_rate' => 1.0000]);
         Currency::where('code', 'USD')->update(['exchange_rate' => 1.0000]);
+
+        CurrencyHelper::clearCache();
 
         $this->dispatch('notify', message: '✅ Tasas de cambio actualizadas correctamente', type: 'success');
     }
