@@ -52,8 +52,9 @@ Route::middleware(['auth'])->group(function () {
     // 5.5. Directorio de Clientes y Cuentas por Cobrar (Crédito)
     Route::get('/customers', \App\Livewire\Customers\CustomerManager::class)->name('customers.index');
 
-    // 6. Ajustes de Impresoras, Cuentas Bancarias y Dispositivos (Ecosistema jspos-sales)
+    // 6. Ajustes de Impresoras, Áreas y Mesas, Cuentas Bancarias y Dispositivos
     Route::get('/settings/printers', PrinterSettings::class)->name('settings.printers');
+    Route::get('/settings/areas', \App\Livewire\Settings\AreaManager::class)->name('settings.areas');
     Route::get('/settings/banks', \App\Livewire\Settings\BankManager::class)->name('settings.banks');
     Route::get('/settings/devices', DeviceManager::class)->name('settings.devices');
 

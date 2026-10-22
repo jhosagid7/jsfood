@@ -137,6 +137,13 @@
                     {{ $area->name }}
                 </button>
             @endforeach
+
+            <a href="{{ url('/settings/areas') }}" 
+                class="px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap bg-slate-900 border border-slate-700 hover:border-amber-500 text-amber-400 hover:text-white transition-all shadow-sm flex items-center space-x-1 shrink-0 ml-auto"
+                title="Configurar y renombrar áreas y mesas">
+                <span>⚙️</span>
+                <span>Configurar Zonas & Mesas</span>
+            </a>
         </div>
 
     <!-- Cuadrícula de Mesas (Touch-Friendly Responsive Grid) -->

@@ -10,9 +10,12 @@
             <p class="text-xs text-slate-400">Configura la moneda principal del negocio, las tasas de cambio (BCV, Binance P2P, COP) y tus cuentas bancarias receptoras.</p>
         </div>
 
-        <div class="flex items-center space-x-2">
+        <div class="flex flex-wrap items-center gap-2">
             <a href="{{ url('/settings/printers') }}" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors">
-                🖨️ Impresoras Térmicas
+                🖨️ Impresoras
+            </a>
+            <a href="{{ url('/settings/areas') }}" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors">
+                🏢 Áreas y Mesas
             </a>
             <a href="{{ url('/settings/banks') }}" class="px-3.5 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black shadow-md">
                 🏦 Bancos y Monedas

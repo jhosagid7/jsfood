@@ -8,7 +8,10 @@
 
         <div class="flex items-center space-x-2">
             <a href="{{ url('/settings/printers') }}" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors">
-                🖨️ Impresoras Térmicas
+                🖨️ Impresoras
+            </a>
+            <a href="{{ url('/settings/areas') }}" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors">
+                🏢 Áreas y Mesas
             </a>
             <a href="{{ url('/settings/banks') }}" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors">
                 🏦 Bancos y Monedas
