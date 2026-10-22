@@ -279,40 +279,61 @@
                             @endif
                         </div>
 
-                        <!-- Opciones de Contado (Efectivo / Tarjeta / Transferencia) -->
-                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            <button type="button" wire:click="$set('selectedPaymentMethod', 'cash_usd')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'cash_usd' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
-                                💵 Efectivo USD ($)
-                            </button>
-                            <button type="button" wire:click="$set('selectedPaymentMethod', 'cash_ved')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'cash_ved' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
-                                🇻🇪 Efectivo Bs
-                            </button>
-                            <button type="button" wire:click="$set('selectedPaymentMethod', 'mobile_pay')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'mobile_pay' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
-                                📲 Pago Móvil
-                            </button>
-                            <button type="button" wire:click="$set('selectedPaymentMethod', 'card')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'card' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
-                                💳 Tarjeta / Punto
-                            </button>
-                            <button type="button" wire:click="$set('selectedPaymentMethod', 'cash_cop')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'cash_cop' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
-                                🇨🇴 Pesos (COP)
-                            </button>
-                            <button type="button" wire:click="$set('selectedPaymentMethod', 'nequi')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'nequi' ? 'bg-pink-600 text-white font-black border-pink-500 shadow-md ring-2 ring-pink-500/30' : 'bg-slate-950 border-slate-800 text-pink-400 hover:bg-slate-800' }}">
-                                🟣 Nequi
-                            </button>
-                            <button type="button" wire:click="$set('selectedPaymentMethod', 'binance_usdt')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'binance_usdt' ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
-                                🟡 Binance USDT
-                            </button>
-                            <button type="button" wire:click="$set('selectedPaymentMethod', 'zelle')"
-                                class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ $selectedPaymentMethod === 'zelle' ? 'bg-purple-600 text-white font-black border-purple-500 shadow-md ring-2 ring-purple-500/30' : 'bg-slate-950 border-slate-800 text-purple-400 hover:bg-slate-800' }}">
-                                🇺🇸 Zelle
-                            </button>
+                        <!-- 1. Opciones en Efectivo -->
+                        <div class="mb-3">
+                            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                                💵 Pagos en Efectivo (Caja Física):
+                            </span>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button type="button" wire:click="selectPaymentMethod('cash_usd', null)"
+                                    class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ ($selectedPaymentMethod === 'cash_usd' && !$selectedBankId) ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                                    💵 Efectivo USD ($)
+                                </button>
+                                <button type="button" wire:click="selectPaymentMethod('cash_ved', null)"
+                                    class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ ($selectedPaymentMethod === 'cash_ved' && !$selectedBankId) ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                                    🇻🇪 Efectivo Bs
+                                </button>
+                                <button type="button" wire:click="selectPaymentMethod('cash_cop', null)"
+                                    class="p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer {{ ($selectedPaymentMethod === 'cash_cop' && !$selectedBankId) ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                                    🇨🇴 Efectivo Pesos (COP)
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 2. Cuentas Bancarias / Digitales (Bancolombia, Banesco, Zelle, etc.) -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                    🏦 Cuentas Bancarias y Digitales (Transferencia / Pago Móvil / Tarjeta):
+                                </span>
+                                <a href="{{ url('/settings/banks') }}" target="_blank" class="text-[10px] text-amber-400 hover:underline flex items-center space-x-1">
+                                    <span>⚙️</span>
+                                    <span>Configurar Bancos</span>
+                                </a>
+                            </div>
+
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                @foreach($banks as $b)
+                                    @php
+                                        $isVed = in_array(strtoupper($b->currency_code), ['VED', 'BS', 'VES']);
+                                        $isCop = strtoupper($b->currency_code) === 'COP';
+                                        $isUsd = strtoupper($b->currency_code) === 'USD';
+                                        $isUsdt = in_array(strtoupper($b->currency_code), ['USDT', 'BINANCE']);
+                                        $flag = $isVed ? '🇻🇪' : ($isCop ? '🇨🇴' : ($isUsd ? '🇺🇸' : '🟡'));
+                                        $curBadge = $isVed ? 'Bs' : ($isCop ? 'COP' : ($isUsd ? 'USD' : 'USDT'));
+                                        $isSelected = $selectedBankId === $b->id;
+                                    @endphp
+                                    <button type="button" wire:click="selectBank({{ $b->id }})"
+                                        class="p-2.5 rounded-xl text-xs font-bold border transition-all text-left flex items-center justify-between cursor-pointer {{ $isSelected ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800' }}">
+                                        <div class="truncate mr-1.5">
+                                            <span class="block truncate">{{ $flag }} {{ $b->name }}</span>
+                                        </div>
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded font-mono font-black shrink-0 {{ $isSelected ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400' }}">
+                                            {{ $curBadge }}
+                                        </span>
+                                    </button>
+                                @endforeach
+                            </div>
                         </div>
 
                         <!-- Opción de Crédito (Visible ÚNICAMENTE si el cliente seleccionado tiene crédito aprobado) -->
@@ -391,7 +412,7 @@
                     @endif
 
                     <!-- Selector de Cuenta Bancaria / Billetera Destino si aplica -->
-                    @if(in_array($selectedPaymentMethod, ['mobile_pay', 'zelle', 'binance_usdt', 'nequi', 'card']))
+                    @if(!in_array($selectedPaymentMethod, ['credit', 'cash_usd', 'cash_ved', 'cash_cop']) || $selectedBankId)
                         <div class="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-2">
                             <label class="block text-xs font-bold text-slate-300 uppercase">
                                 🏦 Cuenta Bancaria / Destino del Pago:
@@ -458,26 +479,67 @@
 
                     <!-- Campos de Monto Recibido, Referencia y Comprobante de Pago -->
                     @php
-                        $activeBank = $selectedBankId ? $banks->firstWhere('id', $selectedBankId) : null;
-                        $currSym = '$';
-                        $currName = 'USD';
-                        $rateCalc = 1.0;
-                        if (($activeBank && in_array(strtoupper($activeBank->currency_code), ['VED', 'BS', 'VES'])) || in_array($selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
-                            $currSym = 'Bs';
-                            $currName = 'Bolívares (BCV)';
-                            $rateCalc = (float) ($config->bcv_rate ?? 60.00);
-                        } elseif (($activeBank && strtoupper($activeBank->currency_code) === 'COP') || in_array($selectedPaymentMethod, ['cash_cop', 'nequi'])) {
-                            $currSym = 'COP$';
-                            $currName = 'Pesos COP';
-                            $rateCalc = (float) ($config->cop_rate ?? 4100.00);
-                        } elseif (($activeBank && in_array(strtoupper($activeBank->currency_code), ['USDT', 'BINANCE'])) || $selectedPaymentMethod === 'binance_usdt') {
-                            $currSym = '₮';
-                            $currName = 'USDT';
-                            $rateCalc = (float) ($config->binance_rate ?? 1.00);
-                        }
+                        $activeCurrency = $this->getActiveCurrencyDetails();
+                        $currSym = $activeCurrency['symbol'];
+                        $currName = $activeCurrency['name'];
+                        $rateCalc = (float) $activeCurrency['rate'];
+                        $activeBank = $activeCurrency['bank'];
                         $isCashOrCredit = in_array($selectedPaymentMethod, ['cash_usd', 'cash_ved', 'cash_cop', 'credit']);
-                        $requiresCapture = !$isCashOrCredit && in_array($selectedPaymentMethod, ['mobile_pay', 'zelle', 'binance_usdt', 'nequi']);
+                        $requiresCapture = !$isCashOrCredit;
                     @endphp
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-bold text-slate-300 uppercase">Monto a Cobrar / Abonar:</label>
+                                <span class="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">{{ $currName }}</span>
+                            </div>
+                            <div class="flex rounded-xl overflow-hidden border border-slate-800 bg-slate-900 focus-within:ring-2 focus-within:ring-amber-500 focus-within:border-amber-500 transition-all shadow-inner">
+                                <span class="inline-flex items-center justify-center px-3 bg-slate-800/80 text-amber-400 font-black text-sm border-r border-slate-800 shrink-0 select-none">
+                                    {{ $currSym }}
+                                </span>
+                                <input type="number" step="0.01" wire:model.live="amountReceived"
+                                    class="w-full bg-transparent border-0 px-3 py-2 text-base font-black text-amber-400 focus:ring-0 focus:outline-none font-mono">
+                            </div>
+                            @if($currSym !== '$')
+                                @php
+                                    $equivUsd = $rateCalc > 0 ? ((float)$amountReceived / $rateCalc) : 0;
+                                @endphp
+                                <span class="text-[11px] text-emerald-400 font-mono block mt-1">
+                                    ≈ ${{ number_format($equivUsd, 2) }} USD (Tasa: {{ number_format($rateCalc, 2) }})
+                                </span>
+                            @else
+                                <span class="text-[11px] text-slate-500 block mt-1">Monto total o parcial (abono).</span>
+                            @endif
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Número de Referencia:</label>
+                            <input type="text" wire:model="paymentReference" placeholder="Ej: #123456 o últimos 4"
+                                class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                            <span class="text-[11px] text-slate-500 block mt-1">Código de aprobación o transferencia.</span>
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs font-bold {{ $requiresCapture ? 'text-amber-400' : 'text-slate-300' }} uppercase">
+                                    Capture / Comprobante:
+                                </label>
+                                @if($requiresCapture)
+                                    <span class="text-[9px] font-black text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30">Obligatorio *</span>
+                                @endif
+                            </div>
+                            <input type="file" wire:model="proofImage" accept="image/*"
+                                class="w-full text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-amber-400 hover:file:bg-slate-700 cursor-pointer">
+                            @if ($proofImage)
+                                <div class="mt-1 flex items-center space-x-2 text-[10px] text-emerald-400 font-bold">
+                                    <span>📸 Capture listo para guardar</span>
+                                </div>
+                            @endif
+                            @error('proofImage')
+                                <span class="text-red-400 text-xs font-bold block mt-1">⚠️ {{ $message }}</span>
+                            @enderror
+                        </div>
+                    </div>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
                         <div>
                             <div class="flex items-center justify-between mb-1">
@@ -578,13 +640,9 @@
                     <!-- BOTÓN PRINCIPAL DE COBRO Y EMISIÓN DE TICKET -->
                     <div class="pt-4 border-t border-slate-800">
                         @php
-                            $rate = 1.0;
-                            if (in_array($selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
-                                $rate = $config->bcv_rate ?? 60.00;
-                            } elseif (in_array($selectedPaymentMethod, ['cash_cop', 'nequi'])) {
-                                $rate = $config->cop_rate ?? 4100.00;
-                            }
-                            $amountUsdInput = (in_array($selectedPaymentMethod, ['cash_ved', 'mobile_pay', 'cash_cop', 'nequi']) && $rate > 0)
+                            $activeCurrency = $this->getActiveCurrencyDetails();
+                            $rate = (float) $activeCurrency['rate'];
+                            $amountUsdInput = ($rate > 0 && $activeCurrency['code'] !== 'USD')
                                 ? ((float)$amountReceived / $rate)
                                 : (float)$amountReceived;
                             $willCoverTotal = ($totalPaidSoFar + $amountUsdInput) >= ($selectedOrder->total_usd - 0.01);

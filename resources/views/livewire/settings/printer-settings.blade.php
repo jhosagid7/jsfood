@@ -7,8 +7,14 @@
         </div>
 
         <div class="flex items-center space-x-2">
-            <a href="{{ url('/settings/devices') }}" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold">
-                📱 Dispositivos Autorizados
+            <a href="{{ url('/settings/printers') }}" class="px-3.5 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black shadow-md">
+                🖨️ Impresoras Térmicas
+            </a>
+            <a href="{{ url('/settings/banks') }}" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors">
+                🏦 Bancos y Monedas
+            </a>
+            <a href="{{ url('/settings/devices') }}" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors">
+                📱 Dispositivos
             </a>
         </div>
     </div>

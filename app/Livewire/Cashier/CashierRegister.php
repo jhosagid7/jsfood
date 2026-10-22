@@ -113,6 +113,124 @@ class CashierRegister extends Component
         $this->recalculateRemaining();
     }
 
+    public function selectBank(int $bankId): void
+    {
+        $bank = Bank::find($bankId);
+        if (!$bank) return;
+
+        $this->selectedBankId = $bank->id;
+        $this->selectedPaymentMethod = $bank->type;
+        $this->proofImage = null;
+        $this->paymentReference = '';
+        $this->recalculateRemaining();
+    }
+
+    public function selectPaymentMethod(string $method, ?int $bankId = null): void
+    {
+        $this->selectedPaymentMethod = $method;
+        $this->selectedBankId = $bankId;
+        $this->proofImage = null;
+        $this->paymentReference = '';
+
+        if ($method === 'mobile_pay' && !$bankId) {
+            $suggested = Bank::where('type', 'pago_movil')->where('state', true)->first();
+            $this->selectedBankId = $suggested?->id;
+        } elseif ($method === 'zelle' && !$bankId) {
+            $suggested = Bank::where('type', 'zelle')->where('state', true)->first();
+            $this->selectedBankId = $suggested?->id;
+        } elseif ($method === 'nequi' && !$bankId) {
+            $suggested = Bank::where('type', 'nequi')->where('state', true)->first();
+            $this->selectedBankId = $suggested?->id;
+        } elseif ($method === 'binance_usdt' && !$bankId) {
+            $suggested = Bank::where('type', 'binance')->where('state', true)->first();
+            $this->selectedBankId = $suggested?->id;
+        }
+
+        $this->recalculateRemaining();
+    }
+
+    public function getActiveCurrencyDetails(): array
+    {
+        $config = Configuration::first();
+        $bcvRate = (float) ($config->bcv_rate ?? 60.00);
+        $copRate = (float) ($config->cop_rate ?? 4100.00);
+        $binanceRate = (float) ($config->binance_rate ?? 1.00);
+
+        $bank = $this->selectedBankId ? Bank::find($this->selectedBankId) : null;
+
+        if ($bank) {
+            $curr = strtoupper(trim($bank->currency_code));
+            if (in_array($curr, ['VED', 'BS', 'VES'])) {
+                return [
+                    'code' => 'VED',
+                    'name' => 'Bolívares (BCV)',
+                    'symbol' => 'Bs',
+                    'rate' => $bcvRate > 0 ? $bcvRate : 60.00,
+                    'bank' => $bank,
+                ];
+            } elseif ($curr === 'COP') {
+                return [
+                    'code' => 'COP',
+                    'name' => 'Pesos Colombianos (COP)',
+                    'symbol' => 'COP$',
+                    'rate' => $copRate > 0 ? $copRate : 4100.00,
+                    'bank' => $bank,
+                ];
+            } elseif (in_array($curr, ['USDT', 'BINANCE'])) {
+                return [
+                    'code' => 'USDT',
+                    'name' => 'Binance USDT (₮)',
+                    'symbol' => '₮',
+                    'rate' => $binanceRate > 0 ? $binanceRate : 1.00,
+                    'bank' => $bank,
+                ];
+            } else {
+                return [
+                    'code' => 'USD',
+                    'name' => 'Dólares ($ USD)',
+                    'symbol' => '$',
+                    'rate' => 1.0000,
+                    'bank' => $bank,
+                ];
+            }
+        }
+
+        // Si no hay banco seleccionado, inferir por el método
+        if (in_array($this->selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
+            return [
+                'code' => 'VED',
+                'name' => 'Bolívares (BCV)',
+                'symbol' => 'Bs',
+                'rate' => $bcvRate > 0 ? $bcvRate : 60.00,
+                'bank' => null,
+            ];
+        } elseif (in_array($this->selectedPaymentMethod, ['cash_cop', 'nequi'])) {
+            return [
+                'code' => 'COP',
+                'name' => 'Pesos Colombianos (COP)',
+                'symbol' => 'COP$',
+                'rate' => $copRate > 0 ? $copRate : 4100.00,
+                'bank' => null,
+            ];
+        } elseif ($this->selectedPaymentMethod === 'binance_usdt') {
+            return [
+                'code' => 'USDT',
+                'name' => 'Binance USDT (₮)',
+                'symbol' => '₮',
+                'rate' => $binanceRate > 0 ? $binanceRate : 1.00,
+                'bank' => null,
+            ];
+        }
+
+        return [
+            'code' => 'USD',
+            'name' => 'Dólares ($ USD)',
+            'symbol' => '$',
+            'rate' => 1.0000,
+            'bank' => null,
+        ];
+    }
+
     public function updatedSelectedBankId($bankId): void
     {
         $this->recalculateRemaining();
@@ -269,31 +387,10 @@ class CashierRegister extends Component
         $order = Order::find($this->selectedOrderId);
         if (!$order) return;
 
-        $config = Configuration::first();
-        $rate = 1.0000;
-        $currencyCode = 'USD';
-
-        $bank = $this->selectedBankId ? Bank::find($this->selectedBankId) : null;
-
-        if ($bank && in_array(strtoupper($bank->currency_code), ['VED', 'BS', 'VES'])) {
-            $rate = (float) ($config->bcv_rate ?? 60.00);
-            $currencyCode = 'VED';
-        } elseif ($bank && strtoupper($bank->currency_code) === 'COP') {
-            $rate = (float) ($config->cop_rate ?? 4100.00);
-            $currencyCode = 'COP';
-        } elseif ($bank && in_array(strtoupper($bank->currency_code), ['USDT', 'BINANCE'])) {
-            $rate = (float) ($config->binance_rate ?? 1.00);
-            $currencyCode = 'USDT';
-        } elseif ($this->selectedPaymentMethod === 'cash_ved' || $this->selectedPaymentMethod === 'mobile_pay') {
-            $rate = (float) ($config->bcv_rate ?? 60.00);
-            $currencyCode = 'VED';
-        } elseif ($this->selectedPaymentMethod === 'cash_cop' || $this->selectedPaymentMethod === 'nequi') {
-            $rate = (float) ($config->cop_rate ?? 4100.00);
-            $currencyCode = 'COP';
-        } elseif ($this->selectedPaymentMethod === 'binance_usdt') {
-            $rate = (float) ($config->binance_rate ?? 1.00);
-            $currencyCode = 'USDT';
-        }
+        $curr = $this->getActiveCurrencyDetails();
+        $rate = $curr['rate'];
+        $currencyCode = $curr['code'];
+        $bank = $curr['bank'];
 
         $amountInCurrency = (float) $this->amountReceived;
         if ($amountInCurrency <= 0) {
@@ -301,21 +398,22 @@ class CashierRegister extends Component
             return;
         }
 
+        // Si se ingresó en moneda local, calcular equivalente en USD
+        $amountUsd = ($currencyCode === 'USD' || $currencyCode === 'USDT' || $rate <= 0) 
+            ? $amountInCurrency 
+            : round($amountInCurrency / $rate, 2);
+
+        $cashier = auth()->user() ?? \App\Models\User::where('email', 'cajero@jsfood.dev')->first() ?? \App\Models\User::first();
+
         // Si no es efectivo ni crédito, requerir comprobante si se paga con pago móvil / zelle
         $isCashOrCredit = in_array($this->selectedPaymentMethod, ['cash_usd', 'cash_ved', 'cash_cop', 'credit']);
-        if (!$isCashOrCredit && in_array($this->selectedPaymentMethod, ['mobile_pay', 'zelle', 'binance_usdt', 'nequi'])) {
+        if (!$isCashOrCredit) {
             $this->validate([
                 'proofImage' => 'required|image|max:5120',
             ], [
                 'proofImage.required' => '⚠️ El capture o comprobante del pago es OBLIGATORIO para transferencias, pago móvil o Zelle.',
             ]);
         }
-
-        // Si se ingresó en moneda local, calcular equivalente en USD
-        $amountUsd = ($currencyCode === 'USD' || $currencyCode === 'USDT') ? $amountInCurrency : ($amountInCurrency / $rate);
-        $amountUsd = round($amountUsd, 2);
-
-        $cashier = auth()->user() ?? \App\Models\User::where('email', 'cajero@jsfood.dev')->first() ?? \App\Models\User::first();
 
         // Subir comprobante si fue adjuntado
         $proofPath = null;
@@ -325,8 +423,6 @@ class CashierRegister extends Component
             ]);
             $proofPath = $this->proofImage->store('proofs', 'public');
         }
-
-        $bank = $this->selectedBankId ? Bank::find($this->selectedBankId) : null;
 
         // 1. Guardar de inmediato en la base de datos para que no se pierda al salir
         $payment = Payment::create([
@@ -359,7 +455,7 @@ class CashierRegister extends Component
         $this->reset(['paymentReference', 'proofImage']);
         $this->recalculateRemaining();
 
-        $this->dispatch('notify', message: "Abono de \${$amountUsd} guardado exitosamente", type: 'success');
+        $this->dispatch('notify', message: "Abono de {$curr['symbol']} " . number_format($amountInCurrency, 2) . " (\${$amountUsd} USD) guardado exitosamente", type: 'success');
     }
 
     public function removePayment(int $index)
@@ -387,20 +483,16 @@ class CashierRegister extends Component
             ? ($order->total_usd - $totalPaidUsd)
             : $order->total_usd;
 
-        $amountPerPerson = round($baseTotal / $persons, 2);
+        $amountPerPersonUsd = round($baseTotal / $persons, 2);
         
-        $config = Configuration::first();
-        if (in_array($this->selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
-            $rate = $config->bcv_rate ?? 60.00;
-            $this->amountReceived = round($amountPerPerson * $rate, 2);
-        } elseif (in_array($this->selectedPaymentMethod, ['cash_cop', 'nequi'])) {
-            $rate = $config->cop_rate ?? 4100.00;
-            $this->amountReceived = round($amountPerPerson * $rate, 0);
+        $curr = $this->getActiveCurrencyDetails();
+        if ($curr['code'] === 'COP') {
+            $this->amountReceived = round($amountPerPersonUsd * $curr['rate'], 0);
         } else {
-            $this->amountReceived = $amountPerPerson;
+            $this->amountReceived = round($amountPerPersonUsd * $curr['rate'], 2);
         }
 
-        $this->dispatch('notify', message: "Cuenta dividida entre {$persons}: cuota de \${$amountPerPerson} c/u", type: 'info');
+        $this->dispatch('notify', message: "Cuenta dividida entre {$persons}: cuota de \${$amountPerPersonUsd} USD ({$curr['symbol']} " . number_format($this->amountReceived, 2) . ") c/u", type: 'info');
     }
 
     public function toggleItemsDetail(): void
@@ -532,23 +624,12 @@ class CashierRegister extends Component
         $totalPaidUsd = collect($this->appliedPayments)->sum('amount_usd');
         $remainingUsd = max(0, $order->total_usd - $totalPaidUsd);
 
-        $config = Configuration::first();
-        $bank = $this->selectedBankId ? Bank::find($this->selectedBankId) : null;
+        $curr = $this->getActiveCurrencyDetails();
 
-        if ($bank && in_array(strtoupper($bank->currency_code), ['VED', 'BS', 'VES'])) {
-            $rate = (float) ($config->bcv_rate ?? 60.00);
-            $this->amountReceived = round($remainingUsd * $rate, 2);
-        } elseif ($bank && strtoupper($bank->currency_code) === 'COP') {
-            $rate = (float) ($config->cop_rate ?? 4100.00);
-            $this->amountReceived = round($remainingUsd * $rate, 0);
-        } elseif (in_array($this->selectedPaymentMethod, ['cash_ved', 'mobile_pay'])) {
-            $rate = (float) ($config->bcv_rate ?? 60.00);
-            $this->amountReceived = round($remainingUsd * $rate, 2);
-        } elseif (in_array($this->selectedPaymentMethod, ['cash_cop', 'nequi'])) {
-            $rate = (float) ($config->cop_rate ?? 4100.00);
-            $this->amountReceived = round($remainingUsd * $rate, 0);
+        if ($curr['code'] === 'COP') {
+            $this->amountReceived = round($remainingUsd * $curr['rate'], 0);
         } else {
-            $this->amountReceived = round($remainingUsd, 2);
+            $this->amountReceived = round($remainingUsd * $curr['rate'], 2);
         }
     }
 
