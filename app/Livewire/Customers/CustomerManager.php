@@ -159,12 +159,42 @@ class CustomerManager extends Component
     public function setAbonoMethod(string $method): void
     {
         $this->abonoMethod = $method;
+
+        // Limpiar banco si es efectivo
+        if (in_array($method, ['cash_usd', 'cash_bs', 'cash_cop'])) {
+            $this->abonoBankId = null;
+        } elseif ($method === 'pago_movil') {
+            $suggested = Bank::where('type', 'pago_movil')->where('state', true)->first();
+            $this->abonoBankId = $suggested?->id;
+        } elseif ($method === 'nequi') {
+            $suggested = Bank::where('type', 'nequi')->where('state', true)->first();
+            $this->abonoBankId = $suggested?->id;
+        } elseif ($method === 'binance_usdt') {
+            $suggested = Bank::where('type', 'binance')->where('state', true)->first();
+            $this->abonoBankId = $suggested?->id;
+        } elseif ($method === 'zelle') {
+            $suggested = Bank::where('type', 'zelle')->where('state', true)->first();
+            $this->abonoBankId = $suggested?->id;
+        } elseif ($method === 'pos_card') {
+            $currBank = $this->abonoBankId ? Bank::find($this->abonoBankId) : null;
+            if (!$currBank || $currBank->type !== 'card') {
+                $suggested = Bank::where('type', 'card')->where('state', true)->first();
+                $this->abonoBankId = $suggested?->id;
+            }
+        } elseif ($method === 'transfer') {
+            $currBank = $this->abonoBankId ? Bank::find($this->abonoBankId) : null;
+            if (!$currBank || $currBank->type !== 'bank_transfer') {
+                $suggested = Bank::where('type', 'bank_transfer')->where('state', true)->first();
+                $this->abonoBankId = $suggested?->id;
+            }
+        }
+
         $this->syncAbonoCurrencyAndRates();
     }
 
     public function updatedAbonoMethod($method): void
     {
-        $this->syncAbonoCurrencyAndRates();
+        $this->setAbonoMethod($method);
     }
 
     public function updatedAbonoBankId($bankId): void
@@ -177,54 +207,47 @@ class CustomerManager extends Component
         $config = Configuration::first();
         $bcvRate = (float) ($config->bcv_rate ?? 60.00);
         $copRate = (float) ($config->cop_rate ?? 4100.00);
-        $binanceRate = (float) ($config->binance_rate ?? 1.00);
 
-        // Si se seleccionó un banco, tomar la moneda del banco si existe
-        $bank = $this->abonoBankId ? Bank::find($this->abonoBankId) : null;
-
-        if ($bank && in_array(strtoupper($bank->currency_code), ['VED', 'BS', 'VES'])) {
-            $this->abonoCurrency = 'VED';
-            $this->abonoExchangeRate = $bcvRate > 0 ? $bcvRate : 60.00;
-        } elseif ($bank && strtoupper($bank->currency_code) === 'COP') {
+        if (in_array($this->abonoMethod, ['cash_cop', 'nequi'])) {
             $this->abonoCurrency = 'COP';
             $this->abonoExchangeRate = $copRate > 0 ? $copRate : 4100.00;
-        } elseif ($bank && in_array(strtoupper($bank->currency_code), ['USDT', 'BINANCE'])) {
-            $this->abonoCurrency = 'USDT';
-            $this->abonoExchangeRate = $binanceRate > 0 ? $binanceRate : 1.00;
-        } elseif ($this->abonoMethod === 'cash_bs' || $this->abonoMethod === 'pago_movil') {
+        } elseif (in_array($this->abonoMethod, ['cash_bs', 'pago_movil'])) {
             $this->abonoCurrency = 'VED';
             $this->abonoExchangeRate = $bcvRate > 0 ? $bcvRate : 60.00;
-            if (!$this->abonoBankId && $this->abonoMethod === 'pago_movil') {
-                $suggestedBank = Bank::where('type', 'pago_movil')->where('state', true)->first();
-                $this->abonoBankId = $suggestedBank?->id;
-            }
-        } elseif ($this->abonoMethod === 'cash_cop' || $this->abonoMethod === 'nequi') {
-            $this->abonoCurrency = 'COP';
-            $this->abonoExchangeRate = $copRate > 0 ? $copRate : 4100.00;
-            if (!$this->abonoBankId && $this->abonoMethod === 'nequi') {
-                $suggestedBank = Bank::where('type', 'nequi')->where('state', true)->first();
-                $this->abonoBankId = $suggestedBank?->id;
-            }
         } elseif ($this->abonoMethod === 'binance_usdt') {
             $this->abonoCurrency = 'USDT';
-            $this->abonoExchangeRate = $binanceRate > 0 ? $binanceRate : 1.00;
-            if (!$this->abonoBankId) {
-                $suggestedBank = Bank::where('type', 'binance')->where('state', true)->first();
-                $this->abonoBankId = $suggestedBank?->id;
-            }
-        } elseif ($this->abonoMethod === 'zelle') {
+            $this->abonoExchangeRate = 1.0000;
+        } elseif ($this->abonoMethod === 'zelle' || $this->abonoMethod === 'cash_usd') {
             $this->abonoCurrency = 'USD';
             $this->abonoExchangeRate = 1.0000;
-            if (!$this->abonoBankId) {
-                $suggestedBank = Bank::where('type', 'zelle')->where('state', true)->first();
-                $this->abonoBankId = $suggestedBank?->id;
-            }
         } else {
-            $this->abonoCurrency = 'USD';
-            $this->abonoExchangeRate = 1.0000;
+            // Para transferencias o tarjetas, tomar la moneda del banco seleccionado
+            $bank = $this->abonoBankId ? Bank::find($this->abonoBankId) : null;
+            if ($bank) {
+                $curr = strtoupper(trim($bank->currency_code));
+                if (in_array($curr, ['VED', 'BS', 'VES'])) {
+                    $this->abonoCurrency = 'VED';
+                    $this->abonoExchangeRate = $bcvRate > 0 ? $bcvRate : 60.00;
+                } elseif ($curr === 'COP') {
+                    $this->abonoCurrency = 'COP';
+                    $this->abonoExchangeRate = $copRate > 0 ? $copRate : 4100.00;
+                } elseif (in_array($curr, ['USDT', 'BINANCE'])) {
+                    $this->abonoCurrency = 'USDT';
+                    $this->abonoExchangeRate = 1.0000;
+                } else {
+                    $this->abonoCurrency = 'USD';
+                    $this->abonoExchangeRate = 1.0000;
+                }
+            } else {
+                $this->abonoCurrency = 'USD';
+                $this->abonoExchangeRate = 1.0000;
+            }
         }
 
-        // Recalcular monto en la moneda elegida
+        // Recalcular monto en la moneda elegida respetando si ya había un monto definido
+        $baseUsd = $this->abonoAmountUsd > 0 ? (float) $this->abonoAmountUsd : (float) ($this->abonoCustomer->current_balance ?? 0);
+        $this->abonoAmountUsd = $baseUsd;
+
         if ($this->abonoCurrency === 'COP') {
             $this->abonoAmountCurrency = round($this->abonoAmountUsd * $this->abonoExchangeRate, 0);
         } else {

@@ -434,19 +434,60 @@
                     </button>
                 </div>
 
-                <div class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                    <div>
-                        <span class="text-xs font-bold text-slate-400 uppercase block">Saldo Total Adeudado:</span>
-                        <span class="text-xl font-black text-red-400 font-mono">${{ number_format($abonoCustomer->current_balance, 2) }} USD</span>
-                    </div>
-                    @if($config && ($config->bcv_rate ?? 0) > 0)
+                <!-- Saldo Total Adeudado con Conversión Dinámica según el Método Elegido -->
+                @php
+                    $bcvR = (float)($config->bcv_rate ?? 60.00);
+                    $copR = (float)($config->cop_rate ?? 4100.00);
+                @endphp
+                <div class="bg-slate-950/90 p-4 rounded-xl border border-slate-800 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <span class="text-xs font-bold text-slate-400 uppercase block">Saldo Total Adeudado:</span>
+                            <span class="text-2xl font-black text-red-400 font-mono">${{ number_format($abonoCustomer->current_balance, 2) }} USD</span>
+                        </div>
+
+                        <!-- Lado Derecho: Equivalente Dinámico en la Moneda del Método Seleccionado -->
                         <div class="text-right">
-                            <span class="text-xs text-slate-400 font-semibold block">En Bolívares (BCV {{ number_format($config->bcv_rate, 2) }}):</span>
-                            <span class="text-base font-black text-amber-400 font-mono">
-                                Bs {{ number_format($abonoCustomer->current_balance * $config->bcv_rate, 2) }}
+                            <span class="text-xs text-slate-400 font-semibold block">
+                                @if($abonoCurrency === 'COP')
+                                    🇨🇴 Total en Pesos (Tasa COP {{ number_format($abonoExchangeRate, 0) }}):
+                                @elseif($abonoCurrency === 'VED')
+                                    🇻🇪 Total en Bolívares (BCV {{ number_format($abonoExchangeRate, 2) }}):
+                                @elseif($abonoCurrency === 'USDT')
+                                    🟡 Total en Cripto USDT (1:1 USD):
+                                @else
+                                    🇺🇸 Total en Dólares ($ USD):
+                                @endif
+                            </span>
+                            <span class="text-lg font-black font-mono {{ $abonoCurrency === 'COP' ? 'text-emerald-400' : ($abonoCurrency === 'VED' ? 'text-amber-400' : ($abonoCurrency === 'USDT' ? 'text-yellow-400' : 'text-blue-400')) }}">
+                                @if($abonoCurrency === 'COP')
+                                    COP$ {{ number_format(round($abonoCustomer->current_balance * $abonoExchangeRate, 0)) }}
+                                @elseif($abonoCurrency === 'VED')
+                                    Bs {{ number_format($abonoCustomer->current_balance * $abonoExchangeRate, 2) }}
+                                @elseif($abonoCurrency === 'USDT')
+                                    ₮ {{ number_format($abonoCustomer->current_balance, 2) }}
+                                @else
+                                    ${{ number_format($abonoCustomer->current_balance, 2) }}
+                                @endif
                             </span>
                         </div>
-                    @endif
+                    </div>
+
+                    <!-- Píldoras de Referencia en Todas las Monedas -->
+                    <div class="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-slate-900 text-[11px] font-mono font-bold">
+                        <span class="text-slate-500 font-sans text-[10px] uppercase">Equivalencias Rápidas:</span>
+                        <div class="flex items-center space-x-2">
+                            <span class="px-2 py-0.5 rounded transition-all {{ $abonoCurrency === 'VED' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 ring-1 ring-amber-400/30' : 'bg-slate-900 text-slate-400' }}">
+                                🇻🇪 Bs {{ number_format($abonoCustomer->current_balance * $bcvR, 2) }}
+                            </span>
+                            <span class="px-2 py-0.5 rounded transition-all {{ $abonoCurrency === 'COP' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 ring-1 ring-emerald-400/30' : 'bg-slate-900 text-slate-400' }}">
+                                🇨🇴 COP$ {{ number_format(round($abonoCustomer->current_balance * $copR, 0)) }}
+                            </span>
+                            <span class="px-2 py-0.5 rounded transition-all {{ in_array($abonoCurrency, ['USD', 'USDT']) ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 ring-1 ring-blue-400/30' : 'bg-slate-900 text-slate-400' }}">
+                                🇺🇸 ${{ number_format($abonoCustomer->current_balance, 2) }}
+                            </span>
+                        </div>
+                    </div>
                 </div>
 
                 <form wire:submit.prevent="processAbono" class="space-y-3.5">
@@ -509,7 +550,7 @@
                             </label>
                             @if($abonoCurrency !== 'USD')
                                 <span class="text-[11px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                    Tasa: 1 USD = {{ number_format($abonoExchangeRate, 2) }} {{ $abonoCurrency }}
+                                    Tasa: 1 USD = {{ $abonoCurrency === 'COP' ? number_format($abonoExchangeRate, 0) : number_format($abonoExchangeRate, 2) }} {{ $abonoCurrency }}
                                 </span>
                             @endif
                         </div>

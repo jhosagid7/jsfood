@@ -190,6 +190,36 @@ class CustomerCreditManagementTest extends TestCase
         Notification::assertSentTo($customer, CreditPaymentReceivedNotification::class);
     }
 
+    public function test_abono_modal_switches_currency_and_calculates_debt_for_pesos_cop(): void
+    {
+        Configuration::create([
+            'business_name' => 'Test Rest',
+            'bcv_rate' => 60.00,
+            'cop_rate' => 4000.00,
+        ]);
+
+        $customer = Customer::create([
+            'name' => 'Empresa Corporativa M&F Steel',
+            'allow_credit' => true,
+            'credit_limit' => 100.00,
+            'current_balance' => 4.50,
+        ]);
+
+        Livewire::actingAs($this->adminUser)
+            ->test(CustomerManager::class)
+            ->call('openAbonoModal', $customer->id)
+            ->call('setAbonoMethod', 'cash_cop')
+            ->assertSet('abonoCurrency', 'COP')
+            ->assertSet('abonoExchangeRate', 4000.00)
+            ->assertSet('abonoAmountCurrency', 18000.00)
+            ->assertSee('COP$ 18,000')
+            ->call('processAbono')
+            ->assertHasNoErrors();
+
+        $customer->refresh();
+        $this->assertEquals(0.00, $customer->current_balance);
+    }
+
     public function test_abono_requires_proof_image_for_digital_payments_but_not_cash(): void
     {
         Configuration::create([
