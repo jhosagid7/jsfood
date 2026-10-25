@@ -26,6 +26,15 @@ Route::get('/access-denied', function () {
     return view('errors.access-denied');
 })->name('access.denied');
 
+Route::get('/device/check-status', function (\Illuminate\Http\Request $request) {
+    $uuid = $request->query('device_uuid') ?? $request->cookie('device_token') ?? session('device_token');
+    $device = $uuid ? \App\Models\DeviceAuthorization::where('uuid', $uuid)->first() : null;
+    return response()->json([
+        'status' => $device ? $device->status : 'unknown',
+        'is_approved' => $device && $device->status === 'approved',
+    ]);
+})->name('device.check-status');
+
 // Rutas protegidas bajo autenticación
 Route::middleware(['auth'])->group(function () {
     // Redirigir inicio al mapa visual de mesas

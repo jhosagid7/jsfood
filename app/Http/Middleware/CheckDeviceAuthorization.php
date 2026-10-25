@@ -15,8 +15,19 @@ class CheckDeviceAuthorization
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Exclude public routes, login/logout, livewire assets, and access-denied
-        if ($request->is('login', 'logout', 'register', 'password/*', 'access-denied', 'up')) {
+        // Exclude public routes, login/logout, livewire assets, access-denied, device status check, and up
+        if ($request->is('login', 'logout', 'register', 'password/*', 'access-denied', 'device/check-status', 'up')) {
+            return $next($request);
+        }
+
+        // Exclude Livewire login component updates so users can authenticate
+        $isLoginLivewire = $request->is('livewire*/update*') && (
+            str_contains((string) $request->header('referer'), '/login') ||
+            str_contains((string) $request->getContent(), 'App\\\\Livewire\\\\Auth\\\\Login') ||
+            str_contains((string) $request->getContent(), 'auth.login')
+        );
+
+        if ($isLoginLivewire) {
             return $next($request);
         }
 
@@ -162,6 +173,9 @@ class CheckDeviceAuthorization
         // SUPER ADMIN BYPASS: Si el usuario autenticado es Super Admin, NUNCA se bloquea
         // (permite entrar siempre a solucionar bloqueos accidentales o gestionar dispositivos)
         if (auth()->check() && (auth()->user()->hasRole('Super Admin') || auth()->user()->email === 'admin@jsfood.dev')) {
+            if ($device && $device->status === 'pending') {
+                $device->update(['status' => 'approved', 'name' => 'Admin ' . (auth()->user()->name ?? 'Super Admin')]);
+            }
             return $next($request);
         }
 
@@ -227,8 +241,8 @@ class CheckDeviceAuthorization
      */
     private function queueDeviceCookie($token)
     {
-        // Format: Name, Value, Minutes
-        // 5256000 minutes = 10 years
-        \Illuminate\Support\Facades\Cookie::queue('device_token', $token, 5256000);
+        // Format: Name, Value, Minutes, Path, Domain, Secure, HttpOnly, Raw, SameSite
+        // 5256000 minutes = 10 years. SameSite: Lax, Secure: false (para redes locales HTTP en restaurantes)
+        \Illuminate\Support\Facades\Cookie::queue('device_token', $token, 5256000, '/', null, false, false, false, 'Lax');
     }
 }

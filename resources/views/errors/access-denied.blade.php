@@ -94,5 +94,25 @@
             </a>
         @endif
     </div>
+
+    @if(!$isBlocked)
+        <script>
+            // Sondeo automático cada 2.5s: cuando el administrador apruebe el dispositivo,
+            // la pantalla salta automáticamente al restaurante sin tener que recargar a mano.
+            const checkUrl = "{{ route('device.check-status', ['device_uuid' => $uuid]) }}";
+            setInterval(() => {
+                fetch(checkUrl, {
+                    headers: { 'Accept': 'application/json' }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.is_approved) {
+                        window.location.href = "{{ url('/') }}";
+                    }
+                })
+                .catch(() => {});
+            }, 2500);
+        </script>
+    @endif
 </body>
 </html>
