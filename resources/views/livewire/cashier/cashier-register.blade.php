@@ -554,6 +554,7 @@
                             </div>
                         </div>
 
+                        @if($requiresCapture)
                         <div>
                             <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Número de Referencia:</label>
                             <input type="text" wire:model="paymentReference" placeholder="Ej: #123456 o últimos 4"
@@ -581,6 +582,7 @@
                                 <span class="text-red-400 text-xs font-bold block mt-1">⚠️ {{ $message }}</span>
                             @enderror
                         </div>
+                        @endif
                     </div>
 
                     <!-- Botón para Agregar al Desglose si es Pago Mixto -->

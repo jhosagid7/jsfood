@@ -627,7 +627,31 @@ class PosDiscountAndCancellationTest extends TestCase
             // fillRemainingAmount debe restaurar el monto restante exacto ($6.00)
             ->assertSet('amountReceived', 6.00);
     }
+
+    public function test_cashier_hides_reference_and_capture_for_cash_payments()
+    {
+        $user = User::first();
+        $order = Order::create([
+            'user_id' => $user->id,
+            'service_type' => 'takeout',
+            'account_label' => 'Para Llevar',
+            'status' => 'pending',
+            'subtotal_usd' => 9.00,
+            'total_usd' => 9.00,
+        ]);
+        $cat = Category::create(['name' => 'Efec', 'slug' => 'efec-cash']);
+        $prod = Product::create(['name' => 'Item', 'price_usd' => 9.00, 'category_id' => $cat->id, 'slug' => 'item-cash']);
+        $order->items()->create(['product_id' => $prod->id, 'quantity' => 1, 'unit_price_usd' => 9.00, 'subtotal_usd' => 9.00]);
+
+        Livewire::test(CashierRegister::class)
+            ->call('selectOrder', $order->id)
+            ->call('selectPaymentMethod', 'cash_usd')
+            ->assertDontSee('mero de Referencia')
+            ->assertDontSee('Capture / Comprobante')
+            ->call('selectPaymentMethod', 'cash_ved')
+            ->assertDontSee('Capture / Comprobante')
+            ->call('selectPaymentMethod', 'zelle')
+            ->assertSee('mero de Referencia')
+            ->assertSee('Capture / Comprobante');
+    }
 }
-
-
-
